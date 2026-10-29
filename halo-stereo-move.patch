@@ -1,0 +1,2505 @@
+diff --git a/Makefile b/Makefile
+index d46a565c..e900027c 100644
+--- a/Makefile
++++ b/Makefile
+@@ -8,11 +8,11 @@ PSL1GHT ?= $(PS3DEV)
+ .DEFAULT_GOAL := all
+ 
+ TARGET     := halo_ps3
+-TITLE      := Halo: Combat Evolved
++TITLE      := Halo CE - Move Reticle Fix 7
+ TITLE_ID   := HALOCE000
+ CONTENT_ID := UP0001-$(TITLE_ID)_00-0000000000000000
+ BUILD      ?= build/ps3
+-LOG_IP     ?= 192.168.178.99
++LOG_IP     ?= 127.0.0.1
+ DEBUG      ?= 1
+ # XMB icon, 320x176 PNG
+ ICON0      ?= ICON/ICON0.PNG
+@@ -38,7 +38,7 @@ MBEDTLS_FLAGS := -I$(MBEDTLS_DIR)/include -DMBEDTLS_USER_CONFIG_FILE='"ps3_mbedt
+ 
+ # ---------- the host layer (port/ps3/src): lv2 and newlib with their own 64-bit long
+ 
+-HOST_SRCS := $(wildcard $(PS3_DIR)/src/*.c)
++HOST_SRCS := $(wildcard $(PS3_DIR)/src/*.c) $(wildcard $(PS3_DIR)/extensions/*.c)
+ HOST_ASMS := $(wildcard $(PS3_DIR)/src/*.S)
+ HOST_OBJS := $(patsubst %,$(BUILD)/obj/%.o,$(basename $(HOST_SRCS) $(HOST_ASMS)))
+ # internet play's DTLS with browsers (posix.h), with the host's long as on the other native builds
+@@ -48,7 +48,7 @@ HOST_OBJS += $(BUILD)/obj/port/linux/src/posix_dtls.o
+ # goes first so that its setjmp.h shadows newlib's.
+ CFLAGS := -std=gnu99 -O2 -Wall -mcpu=cell -mhard-float -mno-altivec -fno-strict-aliasing \
+           -D__PS3__ -DPS3_LOG_IP=\"$(LOG_IP)\" \
+-          -I$(PS3_DIR)/include -I$(PS3_DIR)/src -I$(PS3_DIR)/spu -I$(PSL1GHT)/ppu/include -I$(PS3DEV)/portlibs/ppu/include
++          -I$(PS3_DIR)/include -I$(PS3_DIR)/src -I$(PS3_DIR)/extensions -I$(PS3_DIR)/spu -I$(PSL1GHT)/ppu/include -I$(PS3DEV)/portlibs/ppu/include
+ ifeq ($(DEBUG),1)
+ CFLAGS += -DPS3_LOG
+ endif
+@@ -60,7 +60,7 @@ LDFLAGS := -Wl,--no-multi-toc -L$(PSL1GHT)/ppu/lib -L$(PS3DEV)/portlibs/ppu/lib
+            -Wl,--wrap,printf -Wl,--wrap,vprintf -Wl,--wrap,puts -Wl,--wrap,putchar \
+            -Wl,--wrap,malloc -Wl,--wrap,calloc -Wl,--wrap,realloc -Wl,--wrap,memalign -Wl,--wrap,_sbrk_r
+ 
+-LIBS := -lrsx -lgcm_sys -lio -laudio -lsysutil -lsysfs -lsysmodule -lnet -lnetctl -lrt -llv2 -lm
++LIBS := -lrsx -lgcm_sys -lio -lgem -lcamera -lspurs -laudio -lsysutil -lsysfs -lsysmodule -lnet -lnetctl -lrt -llv2 -lm
+ 
+ # ---------- the game's units
+ 
+@@ -327,7 +327,8 @@ self: $(BUILD)/$(TARGET).elf
+ 
+ pkg: $(BUILD)/$(TARGET).elf
+ 	$(SPRXLINK) $<
+-	@mkdir -p $(BUILD)/pkg/USRDIR
++	@mkdir -p $(BUILD)/pkg/USRDIR/extensions
++	@cp $(PS3_DIR)/extensions/README.md $(PS3_DIR)/extensions/NOTICE.txt $(PS3_DIR)/extensions/settings.json $(BUILD)/pkg/USRDIR/extensions/
+ 	$(MAKE_SELF_NPDRM) $< $(BUILD)/pkg/USRDIR/EBOOT.BIN $(CONTENT_ID)
+ 	$(SFO) --title "$(TITLE)" --appid "$(TITLE_ID)" -f $(PS3DEV)/bin/sfo.xml $(BUILD)/pkg/PARAM.SFO
+ 	@cp $(ICON0) $(BUILD)/pkg/ICON0.PNG
+@@ -352,3 +353,7 @@ clean:
+ 
+ -include $(HOST_OBJS:.o=.d) $(XBOX_OBJS:.o=.d) $(TOML_OBJS:.o=.d) $(MUSL_OBJS:.o=.d) $(ZLIB_OBJS:.o=.d) $(THIRD_PARTY_OBJS:.o=.d) $(MBEDTLS_OBJS:.o=.d) $(GAME_OBJS:.o=.d) \
+ 	$(BRINGUP_OBJS:.o=.d)
++
++$(BUILD)/obj/$(PS3_DIR)/extensions/extension_move.o $(BUILD)/obj/$(PS3_DIR)/extensions/ps3_move_camera.o: CFLAGS += -maltivec
++
++XBOX_CFLAGS += -I$(PS3_DIR)/extensions
+diff --git a/port/ps3/extensions/NOTICE.txt b/port/ps3/extensions/NOTICE.txt
+new file mode 100644
+index 00000000..47fcd665
+--- /dev/null
++++ b/port/ps3/extensions/NOTICE.txt
+@@ -0,0 +1,6 @@
++SPDX-License-Identifier: AGPL-3.0-or-later
++
++New Halo integration files follow the Halo PS3 repository's root LICENSE.
++The NSPS3-derived camera, gyro and gesture files retain their original authorship
++and applicable upstream terms. See README.md and extension-manifest.json for exact
++file provenance. The user's NSPS3 working tree is reference material, unchanged.
+diff --git a/port/ps3/extensions/README.md b/port/ps3/extensions/README.md
+new file mode 100644
+index 00000000..c3aceee2
+--- /dev/null
++++ b/port/ps3/extensions/README.md
+@@ -0,0 +1,67 @@
++# Experimental stereo and PS Move extension
++
++Work in progress based on Mayo1970/halo-ce-ps3 commit
++e76d50c304c425a912c49a973cfd908d9ecbab85.
++
++**Known blocker: campaign loading with Move enabled freezes on the test PS3.**
++The latest hardware capture stops at HUD marker63500 around the Move reticle
++call. A signed16-bit HUD coordinate / float-pointer mismatch has been repaired,
++but that build has not resolved the reported freeze. The installed executable's
++identity still needs verification. Do not treat the mock tests as hardware proof.
++Stereo enabled with Move disabled was reported to load the same campaign.
++Full NSPS3 feature parity is incomplete.
++
++## Settings
++
++Hold Select+Start for the extension menu. Use the D-pad to adjust settings,
++X for actions, and Circle to save and close. Settings are stored in
++`/dev_hdd0/data/HaloCE/extensions.cfg`; the installed settings.json documents
++compiled settings rather than loading code plugins.
++
++`move_enable=1` enables Move after restarting. Default is0. `move_camera=0`
++selects gyro;1 requests optional PS Eye optical tracking. Pair Move/Nav by USB
++and press PS. `move_blue_orb=1` requests blue while in use, using a compatible
++trackable hue for camera mode. Check move_status, move_sensor and move_orb_status.
++The removed move_enabled alias is supported only for migrating old configs.
++
++`r_stereo=1` enables stereo after restarting. `r_stereo_mode` selects:
++
++1. Side-by-side
++2. Over/under
++3. HDMI720p frame packing
++4. Frame sequential
++
++The schema lists separation, convergence, eye swap and other adjustments.
++These modes require further physical display validation. Stereo renders twice,
++forces the PPE Direct3D path and disables dynamic resolution.
++
++## Build and install
++
++Use the upstream PSL1GHT build environment. Build/sign sequentially:
++
++```
++./build.sh -j12 BUILD=build/extensions pkg check
++./build.sh BUILD=build/extensions self
++```
++
++The package uses title ID HALOCE000 and replaces the installed game executable.
++Keep backups of the previous executable. Supply your own game maps as described
++in the root README; no ISO, maps, saves or profiles are included here.
++
++For UDP diagnostics, put the receiving PC's IPv4 address in
++`/dev_hdd0/data/HaloCE/log_ip.txt`, then restart. UDP port18194 is used. The
++public-source default is loopback; configure a destination before collecting.
++HUD markers633xx/634xx indicate screen/HUD progress;63500/63501 surround the
++reticle hook. Heartbeat wait addresses record LAST waits, not active stacks.
++
++## Validation and provenance
++
++Build/link checks, extracted-package comparison, source-patch compatibility,
++and host sanitizer regressions passed for local preview builds. Hardware freeze
++resolution remains unconfirmed. Tests are tools/ps3_extensions_math_test.c,
++tools/ps3_extensions_settings_test.py and tools/ps3_move_loading_test.py.
++
++Camera, gyro and gesture implementations derive from NSPS3's PS3 platform code,
++reference commit09af768d29da1de50958d5ae4b2ebf6abbde6775 (with local working-tree
++changes). Integration follows this repository's license. See NOTICE.txt and the
++root LICENSE. No claim of upstream endorsement or complete compatibility.
+diff --git a/port/ps3/extensions/extension_compat.h b/port/ps3/extensions/extension_compat.h
+new file mode 100644
+index 00000000..7f20e503
+--- /dev/null
++++ b/port/ps3/extensions/extension_compat.h
+@@ -0,0 +1,29 @@
++/* Small cvar/command adapter for the NSPS3 optical tracker. No engine ABI types cross this boundary. */
++#ifndef EXTENSION_COMPAT_H
++#define EXTENSION_COMPAT_H
++#include <math.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++#include "halo_extensions.h"
++#include "ps3_host.h"
++typedef int qboolean;
++#define true 1
++#define false 0
++#define FCVAR_ARCHIVE 1
++#define FCVAR_READ_ONLY 2
++#define bound(lo,v,hi) fmin(fmax((v),(lo)),(hi))
++#define Q_strcmp strcmp
++#define Con_Printf ps3_host_log
++typedef struct {const char *name; float value; int flags; const char *description; char string[160];} ext_cvar;
++#define CVAR_DEFINE_AUTO(name,def,flags,description) ext_cvar name = {#name,0,flags,description,def}
++extern struct ext_clock { double realtime; } host;
++void Cvar_RegisterVariable(ext_cvar *var);
++void Cvar_FullSet(const char *name, const char *value, int flags);
++void Cvar_SetValue(const char *name, float value);
++float Cvar_VariableValue(const char *name);
++void Cmd_AddCommand(const char *name, void (*function)(void), const char *description);
++const char *va(const char *format, ...);
++int PS3_MoveFreeAimLocked(void);
++void PS3_MoveCursorAbsolute(float x, float y);
++#endif
+diff --git a/port/ps3/extensions/extension_freeaim.c b/port/ps3/extensions/extension_freeaim.c
+new file mode 100644
+index 00000000..707faf66
+--- /dev/null
++++ b/port/ps3/extensions/extension_freeaim.c
+@@ -0,0 +1,57 @@
++/* Independent aim changes the simulation's aim while counter-rotating the render camera.
++ * Movement is rotated back into camera space. All values use radians here. */
++#include "extension_compat.h"
++static float aim_yaw,aim_pitch;
++static double active_at;
++static int active;
++static float horizontal_fov=1.57079633f,vertical_fov=1.04719755f;
++extern int halo_move_turning(void);
++void halo_move_apply_aim(float *yaw,float *pitch){
++ if(!halo_move_connected() || !halo_ext_value("move_freeaim") || halo_ext_menu()){
++  *yaw-=aim_yaw;*pitch-=aim_pitch;aim_yaw=aim_pitch=0;active=0;return;
++ }
++
++ active=1;active_at=host.realtime;
++ if(halo_move_turning()){
++  float gain=(float)bound(.5f,halo_ext_value("move_freeaim_turn_gain"),12);
++  *yaw*=gain;*pitch*=gain;
++ }else{
++  float range=(float)bound(.25f,halo_ext_value("move_freeaim_range"),.9f);
++  float max_yaw=atanf(tanf(horizontal_fov*.5f)*range);
++  float max_pitch=atanf(tanf(vertical_fov*.5f)*range);
++  float y=(float)bound(-max_yaw,aim_yaw+*yaw,max_yaw);
++  float p=(float)bound(-max_pitch,aim_pitch+*pitch,max_pitch);
++  *yaw=y-aim_yaw;*pitch=p-aim_pitch;aim_yaw=y;aim_pitch=p;
++ }
++}
++int halo_move_has_aim_offset(void){return active;}
++static int enabled(void){return active;}
++void halo_move_camera(float *forward,float *up,float fovy,float aspect){
++ vertical_fov=fovy;horizontal_fov=2*atanf(tanf(fovy*.5f)*aspect);
++ if(!enabled())return;
++ /* Halo's world Z is up. Undo aim yaw, then pitch around the camera's right axis. */
++ float cy=cosf(-aim_yaw),sy=sinf(-aim_yaw);
++ float x=forward[0]*cy-forward[1]*sy,y=forward[0]*sy+forward[1]*cy;
++ forward[0]=x;forward[1]=y;
++ x=up[0]*cy-up[1]*sy;y=up[0]*sy+up[1]*cy;up[0]=x;up[1]=y;
++ float c=cosf(-aim_pitch),s=sinf(-aim_pitch);
++ for(int i=0;i<3;i++){float f=forward[i],u=up[i];forward[i]=f*c+u*s;up[i]=u*c-f*s;}
++}
++void halo_move_throttle(float *forward,float *strafe){
++ if(!enabled())return;
++ float c=cosf(aim_yaw),s=sinf(aim_yaw),f=*forward,r=*strafe;
++ *forward=f*c+r*s;*strafe=r*c-f*s;
++}
++void halo_move_reticle(float *x,float *y,float width,float height){
++ if(!enabled())return;
++ *x-=tanf(aim_yaw)/tanf(horizontal_fov*.5f)*width*.5f;
++ *y-=tanf(aim_pitch)/tanf(vertical_fov*.5f)*height*.5f;
++}
++/* Halo point2d contains signed 16-bit coordinates, not real_point2d floats.
++ * Copy through aligned floats; never write a float through a point2d member. */
++void halo_move_reticle_point(int16_t *x,int16_t *y,float width,float height){
++ float px=*x,py=*y;
++ halo_move_reticle(&px,&py,width,height);
++ if(isfinite(px))*x=(int16_t)bound(-32768,px,32767);
++ if(isfinite(py))*y=(int16_t)bound(-32768,py,32767);
++}
+diff --git a/port/ps3/extensions/extension_move.c b/port/ps3/extensions/extension_move.c
+new file mode 100644
+index 00000000..972d04a7
+--- /dev/null
++++ b/port/ps3/extensions/extension_move.c
+@@ -0,0 +1,313 @@
++/* GEM lifecycle and timestamp/gyro conventions adapted from NSPS3 ps3_move.c.
++ * Camera and gesture algorithms are retained in their own reference-derived files. */
++#include "extension_compat.h"
++#include "ps3_input.h"
++#include "ps3_move_camera.h"
++#include "ps3_move_math.h"
++#include "ps3_move_gestures.h"
++#include <io/move.h>
++#include <spurs/spurs.h>
++#include <sys/spu.h>
++#include <sys/thread.h>
++#include <sysmodule/sysmodule.h>
++#include <stddef.h>
++
++typedef char gem_attr_abi[sizeof(gemAttribute)==24?1:-1];
++typedef char gem_pad_abi[offsetof(gemInertialState,pad)==64?1:-1];
++typedef char gem_time_abi[offsetof(gemInertialState,time)==88?1:-1];
++static Spurs spurs;
++static int gem_ready,spurs_ready,gem_module,spurs_module,connected,wand=-1,attempted;
++static unsigned pad_mask;
++static uint64_t previous_time;
++static int previous_counter=-1;
++static double previous_poll,retry_at,calibration_begin,calibration_until;
++static unsigned calibration_samples;
++static float bias_x,bias_y,sum_x,sum_y,pending_yaw,pending_pitch;
++static unsigned previous_buttons;
++static ps3_gesture_state_t gestures;
++static float pending_turn;
++static int clutch;
++static int enabled_at_start=-1;
++static int map_loading;
++static int deferred_rumble=-1;
++static double last_look=-100;
++static float value(const char *name){return Cvar_VariableValue(name);}
++static int orb_wand=-1,orb_owned,orb_mode=-1;
++static float orb_saved_r,orb_saved_g,orb_saved_b;
++static double orb_retry,sensor_report;
++/* Diagnostic only: the display heartbeat can identify a blocked SDK call. */
++static volatile int trace_stage;
++static volatile uint64_t trace_at;
++static volatile unsigned trace_sequence;
++static unsigned trace_frames=8;
++static const char *trace_names[]={"idle","load SPURS module","load GEM module",
++ "SPURS attributes","SPURS initialize","GEM initialize","GEM reset",
++ "inertial pump","GEM connection query","GEM latest sample","gyro history",
++ "gesture history","camera frame","orb update","rumble","reserved",
++ "map load paused","GEM shutdown","reserved","reserved",
++ "no-image GEM update start","no-image GEM update finish"};
++void halo_move_trace_stage(int stage){
++ if(stage==trace_stage)return;
++ trace_at=ps3_host_microseconds();trace_stage=stage;trace_sequence++;
++ if(trace_frames && stage>=0 && stage<(int)(sizeof(trace_names)/sizeof(trace_names[0])))
++  Con_Printf("[move call] #%u %s loading=%d gem=%d spurs=%d\n",trace_sequence,trace_names[stage],map_loading,gem_ready,spurs_ready);
++}
++void halo_move_trace_report(void){
++ int stage=trace_stage;uint64_t now=ps3_host_microseconds(),since=trace_at;
++ const char *name=stage>=0 && stage<(int)(sizeof(trace_names)/sizeof(trace_names[0]))?trace_names[stage]:"unknown";
++ Con_Printf("[move trace] #%u stage=%s age=%llu ms enabled=%d loading=%d gem=%d spurs=%d connected=%d wand=%d packet=%d sample=%llu poll_age=%.0f ms\n",
++  trace_sequence,name,(unsigned long long)(since && now>=since?(now-since)/1000:0),enabled_at_start,map_loading,
++  gem_ready,spurs_ready,connected,wand,previous_counter,(unsigned long long)previous_time,
++  host.realtime>0?now*.001-host.realtime*1000:0);
++}
++static int orb_track(int hue){
++ u32 hues[MAX_MOVES];for(int i=0;i<MAX_MOVES;i++)hues[i]=8u<<24;
++ hues[orb_wand]=(u32)hue;return gemTrackHues(hues,NULL);
++}
++static void orb_restore(void){
++ if(orb_owned && gem_ready && orb_wand>=0){
++  if(value("move_camera"))orb_track(4u<<24);
++  else gemForceRGB(orb_wand,orb_saved_r,orb_saved_g,orb_saved_b);
++  PS3_MoveCameraColorChanged();
++ }
++ orb_owned=0;orb_mode=-1;orb_wand=-1;orb_retry=0;
++}
++static void orb_frame(void){
++ if(orb_wand!=wand){orb_restore();orb_wand=wand;}
++ if(!value("move_blue_orb")){
++  if(orb_owned){orb_restore();orb_wand=wand;}
++  Cvar_FullSet("move_orb_status","Blue orb off",FCVAR_READ_ONLY);return;
++ }
++ if(PS3_MoveCameraCalibrating() || host.realtime<orb_retry)return;
++ int optical=value("move_camera")!=0;
++ if(orb_mode==(optical?2:1)){
++  u32 hue;
++  if(!optical || (!gemGetTrackerHue(wand,&hue) && hue>=200 && hue<=255))return;
++ }
++ orb_retry=host.realtime+1;
++ if(!orb_owned){
++  int rc=gemGetRGB(wand,&orb_saved_r,&orb_saved_g,&orb_saved_b);
++  if(rc){Cvar_FullSet("move_orb_status",va("Read orb color failed: 0x%08x",(unsigned)rc),FCVAR_READ_ONLY);return;}
++  orb_owned=1;
++ }
++ int rc;
++ if(optical){
++  u8 compatible[360];int blue=-1;rc=gemGetAllTrackableHues(compatible);
++  if(!rc)for(int delta=0;delta<=40 && blue<0;delta++){
++   int a=240-delta,b=240+delta;
++   if(a>=200 && compatible[a])blue=a;
++   else if(b<=255 && compatible[b])blue=b;
++  }
++  if(rc || blue<0){Cvar_FullSet("move_orb_status","No trackable blue - retaining tracking color",FCVAR_READ_ONLY);return;}
++  rc=orb_track(blue);
++ }else rc=gemForceRGB(wand,0,0,1);
++ if(rc){Cvar_FullSet("move_orb_status",va("Set blue orb failed: 0x%08x",(unsigned)rc),FCVAR_READ_ONLY);return;}
++ orb_mode=optical?2:1;PS3_MoveCameraColorChanged();
++ Cvar_FullSet("move_orb_status",optical?"Blue tracking hue active":"Blue orb active (gyro)",FCVAR_READ_ONLY);
++}
++static void move_status(const char *message){Cvar_FullSet("move_status",message,FCVAR_READ_ONLY);}
++void halo_move_set_loading(int loading){
++ loading=loading!=0;if(loading==map_loading)return;
++ map_loading=loading;
++ trace_frames=8;halo_move_trace_stage(loading?16:0);
++ previous_time=0;previous_counter=-1;previous_poll=0;
++ pending_yaw=pending_pitch=pending_turn=0;previous_buttons=0;
++ memset(&gestures,0,sizeof(gestures));PS3_MoveCameraReset();
++ Con_Printf("[Move load] %s; controller assignment retained\n",loading?"pause GEM polling":"resume GEM polling with fresh history");
++}
++static void move_retry(void){if(map_loading){move_status("Map loading - retry after loading finishes");return;}halo_move_shutdown();retry_at=0;move_status("Retry requested");}
++void halo_move_register_commands(void){Cmd_AddCommand("move_retry",move_retry,"Retry Move initialization and pairing query");}
++void PS3_MoveCursorAbsolute(float x,float y){(void)x;(void)y;}
++int PS3_MoveFreeAimLocked(void){return value("move_freeaim") && !(clutch != (value("move_freeaim_invert")!=0));}
++int halo_move_turning(void){return clutch != (value("move_freeaim_invert")!=0);}
++void halo_move_calibrate(void){
++ calibration_begin=host.realtime;calibration_until=host.realtime+8;
++ sum_x=sum_y=0;calibration_samples=0;previous_time=0;
++}
++int halo_move_connected(void){return connected;}
++unsigned halo_move_pad_mask(void){return pad_mask;}
++void halo_move_rumble(int intensity){
++ deferred_rumble=(int)bound(0,intensity,255);
++ if(!map_loading && gem_ready && connected && wand>=0){halo_move_trace_stage(14);gemSetRumble(wand,(unsigned)deferred_rumble);halo_move_trace_stage(0);deferred_rumble=-1;}
++}
++void halo_move_shutdown(void){
++ halo_move_trace_stage(17);
++ orb_restore();
++ PS3_MoveCameraShutdown();
++ if(gem_ready){if(wand>=0)gemSetRumble(wand,0);gemEnd();}
++ if(spurs_ready)spursFinalize(&spurs);
++ if(gem_module)sysModuleUnload(SYSMODULE_GEM);
++ if(spurs_module)sysModuleUnload(SYSMODULE_SPURS);
++ gem_ready=spurs_ready=gem_module=spurs_module=connected=0;
++ pad_mask=0;wand=-1;previous_time=0;pending_yaw=pending_pitch=pending_turn=0;previous_counter=-1;
++ memset(&gestures,0,sizeof(gestures));halo_move_trace_stage(0);
++}
++static int start(void){
++ gemAttribute attr;SpursAttribute sa;int rc;const char *stage="SPURS module";
++ sys_ppu_thread_t caller;int ppu_priority=1001;
++ attempted=1;
++ halo_move_trace_stage(1);rc=sysModuleLoad(SYSMODULE_SPURS);if(rc<0)goto fail;spurs_module=1;
++ stage="GEM module";halo_move_trace_stage(2);rc=sysModuleLoad(SYSMODULE_GEM);if(rc<0)goto fail;gem_module=1;
++ /* Halo initializes all six SPUs itself before this optional SPURS group. */
++ /* Use the calling game's priority, not the higher-priority display class.
++  * Halo's blocking cache waits yield to peers; a runnable higher-priority
++  * SPURS handler can prevent that yield from returning. Keep GEM a peer so
++  * both its handler and Halo's cache/input threads get scheduled. */
++ if(sysThreadGetId(&caller)==0)sysThreadGetPriority(caller,&ppu_priority);
++ Con_Printf("[extensions] Move SPURS PPU priority %d (game peer)\n",ppu_priority);
++ stage="SPURS attributes";halo_move_trace_stage(3);rc=spursAttributeInitialize(&sa,1,250,ppu_priority,1);if(rc)goto fail;
++ stage="SPURS initialization";halo_move_trace_stage(4);rc=spursInitializeWithAttribute(&spurs,&sa);if(rc)goto fail;spurs_ready=1;
++ memset(&attr,0,sizeof(attr));attr.version=MOVE_VERSION;attr.max=MAX_MOVES;
++ attr.spurs=&spurs;attr.spu_priorities[0]=1;
++ stage="GEM initialization";halo_move_trace_stage(5);rc=gemInit(&attr);if(rc)goto fail;gem_ready=1;
++ halo_move_trace_stage(6);for(int i=0;i<MAX_MOVES;i++)gemReset(i);halo_move_trace_stage(0);
++ move_status("Waiting for Move - pair USB, then press PS");return 1;
++fail:
++ Con_Printf("[extensions] Move %s failed 0x%x; pad controls available\n",stage,rc);
++ halo_move_shutdown();move_status(va("%s failed: 0x%08x - move_retry",stage,(unsigned)rc));retry_at=host.realtime+10;return 0;
++}
++static void gyro(const gemInertialState *sample,float dt,int blocked,float *yaw,float *pitch){
++ if(blocked || !previous_time)return;
++ if(sample->counter==previous_counter && sample->time==previous_time)return;
++ uint64_t stamp=sample->time,previous=previous_time;
++ if((int64_t)stamp<=0 || stamp<=previous){
++  if(dt<=0 || dt>.1f || sample->counter==previous_counter)return;
++  PS3_MoveDelta(1,1+(uint64_t)(dt*1000000),sample->gyro[0]-sample->gyro_bias[0]-bias_x,
++   sample->gyro[1]-sample->gyro_bias[1]-bias_y,value("move_sensitivity"),value("move_deadzone"),
++   value("move_invert_y")!=0,0,yaw,pitch);
++  return;
++ }
++ if(stamp-previous>250000)return;
++ gemInertialState history[32];int count=0;
++ uint64_t before=stamp,at=previous;
++ while(count<32){
++  gemInertialState *old=&history[count];
++  if(gemGetInertialState(wand,GEM_INERTIAL_PREVIOUS,before-1,old))break;
++  if(old->time>=before || old->time<=previous)break;
++  before=old->time;count++;
++ }
++ for(int i=count-1;i>=-1;i--){
++  const gemInertialState *old=i>=0?&history[i]:sample;
++  float dy=0,dp=0;
++  PS3_MoveDelta(at,old->time,old->gyro[0]-old->gyro_bias[0]-bias_x,
++   old->gyro[1]-old->gyro_bias[1]-bias_y,value("move_sensitivity"),value("move_deadzone"),
++   value("move_invert_y")!=0,0,&dy,&dp);
++  *yaw+=dy;*pitch+=dp;at=old->time;
++ }
++}
++static ps3_gesture_result_t gesture_step(const gemInertialState *sample,int blocked){
++ float accel[3];for(int i=0;i<3;i++)accel[i]=sample->accelerometer[i]-sample->accelerometer_bias[i];
++ return PS3_GestureStep(&gestures,sample->time,accel,
++  sample->gyro[0]-sample->gyro_bias[0]-bias_x,sample->gyro[1]-sample->gyro_bias[1]-bias_y,
++  sample->gyro[2]-sample->gyro_bias[2],!blocked && value("move_gestures"),value("move_gesture_shake")!=0,
++  value("move_gesture_flick")!=0,value("move_gesture_shake_limit"),value("move_gesture_flick_limit"),value("move_gesture_cooldown"));
++}
++static ps3_gesture_result_t gesture_history(const gemInertialState *sample,int blocked){
++ ps3_gesture_result_t result={0};
++ if(!blocked && gestures.previous && sample->time>gestures.previous && sample->time-gestures.previous<=250000){
++  gemInertialState history[32];int count=0;uint64_t before=sample->time;
++  while(count<32){
++   gemInertialState *old=&history[count];
++   if(gemGetInertialState(wand,GEM_INERTIAL_PREVIOUS,before-1,old))break;
++   if(old->time>=before || old->time<=gestures.previous)break;
++   before=old->time;count++;
++  }
++  for(int i=count-1;i>=0;i--){ps3_gesture_result_t g=gesture_step(&history[i],blocked);result.shake|=g.shake;result.turn+=g.turn;}
++ }
++ ps3_gesture_result_t g=gesture_step(sample,blocked);
++ result.locked=g.locked;result.shake|=g.shake;result.turn+=g.turn;return result;
++}
++void halo_move_frame(unsigned *buttons){
++ *buttons=0;
++ /* Do not remove/reassign a controller from a running match when its setting
++  * changes. Start the merged Move/Nav route on the next game launch instead. */
++ if(enabled_at_start<0)enabled_at_start=value("move_enable")!=0;
++ if(!enabled_at_start){pending_yaw=pending_pitch=pending_turn=0;move_status(value("move_enable")?"Enable saved - restart game":"Disabled - set move_enable to 1, then restart");return;}
++ if(map_loading){
++  move_status("Map loading - motion polling paused");
++  Cvar_FullSet("move_sensor","Paused during map loading; history resets on resume",FCVAR_READ_ONLY);
++  return;
++ }
++ if(!gem_ready && (host.realtime<retry_at || !start()))return;
++ (void)attempted;
++ halo_move_trace_stage(7);PS3_MoveCameraPumpInertial();halo_move_trace_stage(0);
++ gemInfo info;memset(&info,0,sizeof(info));
++ halo_move_trace_stage(8);int info_rc=gemGetInfo(&info);halo_move_trace_stage(0);
++ if(info_rc){move_status(va("Connection query failed: 0x%08x",(unsigned)info_rc));connected=0;pad_mask=0;previous_time=0;pending_yaw=pending_pitch=pending_turn=0;return;}
++ int selected=wand;pad_mask=0;
++ for(int i=0;i<MAX_MOVES;i++)if(info.status[i]==1 && info.port[i]>=1 && info.port[i]<=7)pad_mask|=1u<<(info.port[i]-1);
++ if(selected<0 || info.status[selected]!=1){selected=-1;for(int i=0;i<MAX_MOVES;i++)if(info.status[i]==1){selected=i;break;}}
++ if(selected<0){
++  orb_restore();
++  float y=0,p=0;PS3_MoveCameraFrame(-1,0,1,&y,&p);move_status("Waiting for Move - pair USB, then press PS");connected=0;wand=-1;previous_time=0;pending_yaw=pending_pitch=pending_turn=0;return;
++ }
++ if(selected!=wand){pending_yaw=pending_pitch=pending_turn=0;wand=selected;previous_time=0;previous_counter=-1;bias_x=bias_y=0;PS3_MoveCameraReset();}
++ gemInertialState sample;memset(&sample,0,sizeof(sample));
++ halo_move_trace_stage(9);int sensor_rc=gemGetInertialState(wand,GEM_INERTIAL_LATEST,0,&sample);halo_move_trace_stage(0);
++ if(sensor_rc){move_status(va("Wand %d sensor read failed: 0x%08x",wand+1,(unsigned)sensor_rc));connected=0;previous_time=0;pending_yaw=pending_pitch=pending_turn=0;return;}
++ connected=1;
++ if(deferred_rumble>=0)halo_move_rumble(deferred_rumble);
++ if(host.realtime>=sensor_report){
++  Cvar_FullSet("move_sensor",va("W%d pkt %d gyro %.2f %.2f | %s",wand+1,sample.counter,
++   sample.gyro[0]-sample.gyro_bias[0],sample.gyro[1]-sample.gyro_bias[1],
++   host.realtime-last_look<=.2?"gameplay look active":"waiting for player 1 gameplay"),FCVAR_READ_ONLY);
++  sensor_report=host.realtime+1;
++ }
++ Cvar_FullSet("move_status",!value("move_enable")?"Connected - disable saved for next launch":calibration_until?"Calibrating - hold still":"Connected",FCVAR_READ_ONLY);
++ float dt=previous_poll>0?(float)(host.realtime-previous_poll):0;previous_poll=host.realtime;
++ unsigned raw=sample.pad.buttons;
++ if(sample.pad.ANA_T>=32)raw|=2;else if(sample.pad.ANA_T>16 && (previous_buttons&2))raw|=2;
++ static const unsigned masks[]={2,64,128,32,16,8,1,4};
++ static const char *bindings[]={"move_bind_t","move_bind_cross","move_bind_square","move_bind_circle","move_bind_triangle"};
++ for(int i=0;i<5;i++)if(raw&masks[i])*buttons|=(unsigned)bound(0,value(bindings[i]),65535);
++ if(raw&8)*buttons|=PS3_PAD_START;
++ if(raw&1)*buttons|=PS3_PAD_SELECT;
++ if(raw&4)*buttons|=(unsigned)bound(0,value("move_bind_move"),65535);
++ int turn_button=(int)value("move_freeaim_turn_button")-1;
++ clutch=turn_button>=0 && turn_button<8 && (raw&masks[turn_button]);
++ if(clutch && turn_button<5)*buttons&=~(unsigned)value(bindings[turn_button]);
++ if((raw&1) && !(previous_buttons&1) && !(raw&8))halo_move_calibrate();
++ previous_buttons=raw;
++ float gx=sample.gyro[0]-sample.gyro_bias[0],gy=sample.gyro[1]-sample.gyro_bias[1];
++ if(calibration_until && (sample.counter!=previous_counter || sample.time!=previous_time)){
++  if(host.realtime>=calibration_until)calibration_until=0;
++  else if(!isfinite(gx) || !isfinite(gy) || fabsf(gx)>.15f || fabsf(gy)>.15f){
++   calibration_begin=host.realtime;sum_x=sum_y=0;calibration_samples=0;
++  }else{
++   sum_x+=gx;sum_y+=gy;calibration_samples++;
++   if(host.realtime-calibration_begin>=1 && calibration_samples>=10){
++    bias_x=sum_x/calibration_samples;bias_y=sum_y/calibration_samples;calibration_until=0;
++    Con_Printf("[extensions] Move drift calibrated: %.5f %.5f\n",bias_x,bias_y);
++   }
++  }
++ }
++ int blocked=halo_ext_menu() || host.realtime-last_look>.2 || calibration_until>0 || (clutch && !value("move_freeaim"));
++ float yaw=0,pitch=0,optical_yaw=0,optical_pitch=0;
++ halo_move_trace_stage(10);gyro(&sample,dt,blocked,&yaw,&pitch);halo_move_trace_stage(0);
++ halo_move_trace_stage(11);ps3_gesture_result_t gesture=gesture_history(&sample,blocked);halo_move_trace_stage(0);
++ if(gesture.shake){
++  int action=(int)value("move_gesture_shake");
++  *buttons|=action==1?PS3_PAD_SQUARE:action==2?PS3_PAD_TRIANGLE:action==3?PS3_PAD_SQUARE:action==4?PS3_PAD_CROSS:0;
++ }
++ halo_move_trace_stage(12);if(PS3_MoveCameraFrame(wand,0,blocked || gesture.locked,&optical_yaw,&optical_pitch)){
++  yaw=optical_yaw;pitch=optical_pitch;
++ }
++ halo_move_trace_stage(13);orb_frame();halo_move_trace_stage(0);
++
++ if(gesture.locked || blocked)yaw=pitch=0;
++ if(blocked)pending_yaw=pending_pitch=pending_turn=0;
++ else if(gesture.turn)pending_turn+=(float)gesture.turn*(float)bound(15,value("move_gesture_angle"),180)*.01745329252f;
++ if(isfinite(yaw) && isfinite(pitch)){
++  pending_yaw=(float)bound(-3.14159265f,pending_yaw+(float)bound(-180,yaw,180)*.01745329252f,3.14159265f);
++  pending_pitch=(float)bound(-1.57079633f,pending_pitch-(float)bound(-90,pitch,90)*.01745329252f,1.57079633f);
++ }
++ previous_time=sample.time;previous_counter=sample.counter;halo_move_trace_stage(0);if(trace_frames)trace_frames--;
++}
++int halo_move_look(float *yaw,float *pitch){
++ last_look=host.realtime;
++ *yaw=pending_yaw;*pitch=pending_pitch;pending_yaw=pending_pitch=0;
++ extern int halo_move_has_aim_offset(void);
++ return connected || halo_move_has_aim_offset();
++}
++
++float halo_move_take_turn(void){float turn=pending_turn;pending_turn=0;return turn;}
+diff --git a/port/ps3/extensions/extension_settings.c b/port/ps3/extensions/extension_settings.c
+new file mode 100644
+index 00000000..0a76a3d6
+--- /dev/null
++++ b/port/ps3/extensions/extension_settings.c
+@@ -0,0 +1,164 @@
++#include "extension_compat.h"
++#include "ps3_input.h"
++#include "ps3_move_camera.h"
++#include <stdarg.h>
++#include <stdlib.h>
++#include <errno.h>
++
++struct ext_clock host;
++static ext_cvar *vars[128];
++static int count, initialized, menu, selected;
++static struct { const char *name; void (*run)(void); const char *description; } commands[24];
++static int command_count;
++static unsigned previous, previous_chord;
++static double repeat_at;
++static struct ps3_pad virtual_pad, hidden;
++static int virtual_port=-1, navigation_port=-1;
++#define EXT_SETTING(name,def,description) {name,0,FCVAR_ARCHIVE,description,def},
++static ext_cvar settings[] = {
++ {"move_status",0,FCVAR_READ_ONLY,"Move sensor status","Disabled"},
++ {"move_sensor",0,FCVAR_READ_ONLY,"Motion samples and gameplay input route","No motion samples yet"},
++ {"move_orb_status",0,FCVAR_READ_ONLY,"Optional blue orb status","Blue orb off"},
++#include "settings.inc"
++};
++#undef EXT_SETTING
++
++static ext_cvar *find(const char *name) {
++ for(int i=0;i<count;i++)if(!strcmp(vars[i]->name,name))return vars[i];
++ return NULL;
++}
++void Cvar_RegisterVariable(ext_cvar *var) {
++ if(find(var->name) || count==128)return;
++ var->value=strtof(var->string,NULL); vars[count++]=var;
++}
++void Cvar_FullSet(const char *name,const char *value,int flags) {
++ (void)flags;ext_cvar *v=find(name);if(!v)return;
++ snprintf(v->string,sizeof(v->string),"%s",value);v->value=strtof(value,NULL);
++ if(!isfinite(v->value))v->value=0;
++}
++void Cvar_SetValue(const char *name,float value) {
++ if(!isfinite(value))return;
++ char s[40];snprintf(s,sizeof(s),"%.7g",value);Cvar_FullSet(name,s,0);
++}
++float Cvar_VariableValue(const char *name){ext_cvar *v=find(name);return v?v->value:0;}
++float halo_ext_value(const char *name){
++ halo_ext_init();float v=Cvar_VariableValue(name);
++ if(!strcmp(name,"r_stereo_depth"))return (float)bound(0,v,3);
++ if(!strcmp(name,"r_stereo_convergence"))return (float)bound(.5f,v,100);
++ return v;
++}
++void halo_ext_set(const char *name,float value){Cvar_SetValue(name,value);}
++void Cmd_AddCommand(const char *name,void (*run)(void),const char *description) {
++ if(command_count<24){commands[command_count].name=name;commands[command_count].run=run;commands[command_count++].description=description;}
++}
++const char *va(const char *format,...) {
++ static char buffers[4][256];static unsigned slot;char *b=buffers[slot++%4];
++ va_list a;va_start(a,format);vsnprintf(b,256,format,a);va_end(a);return b;
++}
++static void save(void) {
++ char path[512],temp[520];snprintf(path,sizeof(path),"%s/extensions.cfg",ps3_host_data_root());
++ snprintf(temp,sizeof(temp),"%s.tmp",path);FILE *f=fopen(temp,"w");
++ if(!f){Con_Printf("[extensions] cannot write %s: %d\n",temp,errno);return;}
++ fprintf(f,"# Halo PS3 Stereo + Move extension. Select+Start opens settings.\n");
++ for(int i=0;i<count;i++)if(vars[i]->flags&FCVAR_ARCHIVE)fprintf(f,"%s %s\n",vars[i]->name,vars[i]->string);
++ int ok=!ferror(f);if(fclose(f))ok=0;
++ if(!ok || rename(temp,path))Con_Printf("[extensions] save failed; previous settings kept\n");
++}
++void halo_ext_init(void) {
++ if(initialized)return;
++ initialized=1;
++ for(unsigned i=0;i<sizeof(settings)/sizeof(settings[0]);i++)Cvar_RegisterVariable(&settings[i]);
++ PS3_MoveCameraInit();
++ Cvar_SetValue("move_camera_stability",2);
++ Cmd_AddCommand("move_calibrate",halo_move_calibrate,"Hold wand still for drift calibration");
++ {extern void halo_move_register_commands(void);halo_move_register_commands();}
++ int have_enable=0,have_legacy=0;float legacy_enable=0;
++ char path[512],line[512],key[96],value[160];
++ snprintf(path,sizeof(path),"%s/extensions.cfg",ps3_host_data_root());FILE *f=fopen(path,"r");
++ if(f){while(fgets(line,sizeof(line),f))if(line[0]!='#' && sscanf(line,"%95s %159s",key,value)==2){
++   ext_cvar *v=find(key);char *end;float n=strtof(value,&end);
++   if(!*end && isfinite(n)){
++    if(!strcmp(key,"move_enable"))have_enable=1;
++    if(!strcmp(key,"move_enabled")){have_legacy=1;legacy_enable=n;}
++   }
++   if(v && (v->flags&FCVAR_ARCHIVE) && !*end && isfinite(n))Cvar_FullSet(key,value,0);
++  }fclose(f);}
++ if(!have_enable && have_legacy)Cvar_SetValue("move_enable",legacy_enable);
++ memset(&hidden,0,sizeof(hidden));memset(hidden.stick,128,sizeof(hidden.stick));
++ Con_Printf("[extensions] Stereo + Move extension loaded; Select+Start for settings\n");
++}
++int halo_ext_stereo_mode(void){
++ static int mode=-1;
++ if(mode<0){mode=halo_ext_value("r_stereo")?(int)bound(1,halo_ext_value("r_stereo_mode"),4):0;}
++ return mode;
++}
++int halo_ext_menu(void){return menu;}
++int halo_ext_rows(void){return count+command_count;}
++int halo_ext_selected(void){return selected;}
++void halo_ext_row(int row,char *text,uint32_t size){
++ if(row<0 || row>=count+command_count){if(size)text[0]=0;return;}
++ if(row<count)snprintf(text,size,"%s: %s",vars[row]->name,vars[row]->string);
++ else snprintf(text,size,"[ %s ]",commands[row-count].name);
++}
++static void adjust(int direction){
++ if(selected>=count){if(direction>0)commands[selected-count].run();return;}
++ ext_cvar *v=vars[selected];if(v->flags&FCVAR_READ_ONLY)return;
++ float step=1,low=0,high=1;
++ if(strstr(v->name,"sensitivity")){step=.05f;low=.25f;high=8;}
++ else if(strstr(v->name,"deadzone")){step=.005f;high=.2f;}
++ else if(strstr(v->name,"gain")){step=.25f;low=.5f;high=12;}
++ else if(strstr(v->name,"range") || strstr(v->name,"zone")){step=.05f;low=.25f;high=.9f;}
++ else if(strstr(v->name,"angle")){step=15;low=15;high=180;}
++ else if(strstr(v->name,"turn_speed")){step=10;low=30;high=360;}
++ else if(strstr(v->name,"limit")){step=.1f;low=.3f;high=8;}
++ else if(strstr(v->name,"cooldown")){step=.1f;low=.3f;high=3;}
++ else if(strstr(v->name,"steadiness")){step=.25f;high=3;}
++ else if(strstr(v->name,"_port")){high=7;}
++ else if(strstr(v->name,"_button")){high=8;}
++ else if(strstr(v->name,"gesture_shake")){high=4;}
++ else if(!strcmp(v->name,"r_stereo_mode")){low=1;high=4;}
++ else if(!strcmp(v->name,"r_stereo_depth")){step=.05f;high=3;}
++ else if(!strcmp(v->name,"r_stereo_convergence")){step=.5f;low=.5f;high=100;}
++ else if(strstr(v->name,"move_bind_")){
++  static const unsigned masks[]={0,512,32768,16384,8192,4096,1024,2048,256,8,1,2,4};
++  int index=0;for(unsigned i=0;i<sizeof(masks)/sizeof(masks[0]);i++)if(masks[i]==(unsigned)v->value)index=i;
++  index=(index+direction+13)%13;Cvar_SetValue(v->name,(float)masks[index]);return;
++ }
++ Cvar_SetValue(v->name,(float)bound(low,v->value+direction*step,high));
++}
++void halo_ext_poll(struct ps3_pad *pads){
++ halo_ext_init();host.realtime=ps3_host_microseconds()*.000001;
++ unsigned wand_buttons=0;halo_move_frame(&wand_buttons);
++ unsigned mask=halo_move_pad_mask();int nav=-1;
++ int requested=(int)Cvar_VariableValue("move_nav_port")-1;
++ for(int p=0;p<PS3_PAD_PORTS;p++)if(pads[p].connected && !(mask&(1u<<p)) && (requested<0 || requested==p)){nav=p;break;}
++ memset(&virtual_pad,0,sizeof(virtual_pad));memset(virtual_pad.stick,128,sizeof(virtual_pad.stick));
++ virtual_port=-1;navigation_port=-1;
++ if(halo_move_connected()){
++  virtual_port=0;navigation_port=nav;
++  if(nav>=0 && Cvar_VariableValue("move_nav"))virtual_pad=pads[nav];
++  virtual_pad.connected=1;virtual_pad.buttons|=wand_buttons;
++ }
++ unsigned buttons=wand_buttons;
++ for(int p=0;p<PS3_PAD_PORTS;p++)if(!(mask&(1u<<p)))buttons|=pads[p].buttons;
++ unsigned chord=(buttons&(PS3_PAD_SELECT|PS3_PAD_START))==(PS3_PAD_SELECT|PS3_PAD_START);
++ if(chord && !previous_chord){menu=!menu;previous=buttons;if(!menu)save();}
++ previous_chord=chord;
++ if(menu){
++  unsigned press=buttons&~previous;
++  if(buttons!=previous)repeat_at=host.realtime+.4;
++  else if(host.realtime>=repeat_at){press=buttons;repeat_at=host.realtime+.12;}
++  if(press&PS3_PAD_UP)selected=(selected+halo_ext_rows()-1)%halo_ext_rows();
++  if(press&PS3_PAD_DOWN)selected=(selected+1)%halo_ext_rows();
++  if(press&PS3_PAD_LEFT)adjust(-1);
++  if(press&(PS3_PAD_RIGHT|PS3_PAD_CROSS))adjust(1);
++  if(press&PS3_PAD_CIRCLE){menu=0;save();}
++ }
++ previous=buttons;
++}
++const struct ps3_pad *halo_ext_pad(int port,const struct ps3_pad *pad){
++ if(menu){static struct ps3_pad quiet;quiet=port==virtual_port?virtual_pad:*pad;quiet.buttons=0;memset(quiet.stick,128,sizeof(quiet.stick));memset(quiet.pressure,0,sizeof(quiet.pressure));return &quiet;}
++ if(port==virtual_port)return &virtual_pad;
++ if((halo_move_pad_mask()&(1u<<port)) || port==navigation_port)return &hidden;
++ return pad;
++}
+diff --git a/port/ps3/extensions/halo_extensions.h b/port/ps3/extensions/halo_extensions.h
+new file mode 100644
+index 00000000..65dd03fe
+--- /dev/null
++++ b/port/ps3/extensions/halo_extensions.h
+@@ -0,0 +1,26 @@
++#ifndef HALO_EXTENSIONS_H
++#define HALO_EXTENSIONS_H
++#include <stdint.h>
++struct ps3_pad;
++void halo_ext_init(void);
++void halo_ext_poll(struct ps3_pad *pads);
++const struct ps3_pad *halo_ext_pad(int port, const struct ps3_pad *pad);
++int halo_ext_menu(void);
++int halo_ext_rows(void);
++int halo_ext_selected(void);
++void halo_ext_row(int row, char *text, uint32_t size);
++float halo_ext_value(const char *name);
++void halo_ext_set(const char *name, float value);
++int halo_ext_stereo_mode(void);
++void halo_move_shutdown(void);
++void halo_move_frame(unsigned *buttons);
++void halo_move_set_loading(int loading);
++void halo_move_trace_stage(int stage);
++void halo_move_trace_report(void);
++int halo_move_connected(void);
++unsigned halo_move_pad_mask(void);
++int halo_move_look(float *yaw, float *pitch);
++void halo_move_calibrate(void);
++void halo_ext_draw_menu(void);
++void halo_gpu_capture_eye(int eye, uint32_t offset, uint32_t pitch, uint32_t width, uint32_t height);
++#endif
+diff --git a/port/ps3/extensions/ps3_move_camera.c b/port/ps3/extensions/ps3_move_camera.c
+new file mode 100644
+index 00000000..331da893
+--- /dev/null
++++ b/port/ps3/extensions/ps3_move_camera.c
+@@ -0,0 +1,299 @@
++/* Optional, local-only PS Eye/GEM optical tracking. Camera frames are never
++ * displayed, recorded or transmitted. Gyro-only input does not open a camera. */
++#include "extension_compat.h"
++#include "ps3_move_camera.h"
++
++#include <stdint.h>
++#include <string.h>
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wstrict-prototypes"
++#pragma GCC diagnostic ignored "-Wold-style-definition"
++#include <io/move.h>
++#include <io/camera.h>
++#include <sys/memory.h>
++#include <sysmodule/sysmodule.h>
++#include <lv2/systime.h>
++#pragma GCC diagnostic pop
++
++static CVAR_DEFINE_AUTO(move_camera, "0", FCVAR_ARCHIVE, "use PS Eye light-ball tracking");
++static CVAR_DEFINE_AUTO(move_camera_sensitivity, "3.250000", FCVAR_ARCHIVE, "light-ball cursor and look sensitivity");
++static CVAR_DEFINE_AUTO(move_camera_mirror, "0", FCVAR_ARCHIVE, "mirror camera X for natural screen pointing");
++static CVAR_DEFINE_AUTO(move_camera_fallback, "1", FCVAR_ARCHIVE, "use gyro if the light ball is not tracked");
++static CVAR_DEFINE_AUTO(move_camera_status, "Disabled - gyro only", FCVAR_READ_ONLY, "PS Eye tracking status");
++static CVAR_DEFINE_AUTO(move_camera_edge_turn, "0", FCVAR_ARCHIVE, "continuous horizontal turning near optical aim edges");
++static CVAR_DEFINE_AUTO(move_camera_edge_zone, "0.65", FCVAR_ARCHIVE, "central optical aim region, fraction of half-width");
++static CVAR_DEFINE_AUTO(move_camera_turn_speed, "300", FCVAR_ARCHIVE, "maximum optical edge turn speed in degrees/sec");
++static CVAR_DEFINE_AUTO(move_camera_stability, "0", FCVAR_ARCHIVE, "optical stability defaults revision");
++static CVAR_DEFINE_AUTO(move_camera_steadiness, "1", FCVAR_ARCHIVE, "optical jitter filtering strength, 0 to 3");
++static qboolean filtered_valid, edge_armed, clutch_held, recenter_on_release, center_pending;
++static float filtered_x,filtered_y, center_sum_x,center_sum_y, center_start_x,center_start_y;
++static int center_samples;
++static double center_ready_at,center_still_at,last_poll;
++static qboolean module_ready, camera_ready, container_ready, opened, started;
++static sys_mem_container_t container;
++static cameraInfoEx camera;
++static int selected = -1;
++static qboolean calibrating_ball, have_frame, have_point, centered;
++static u32 previous_frame;
++static float center_x=.5f, center_y=.5f, last_x, last_y, raw_x, raw_y;
++static double retry_at, last_visible, last_image_update;
++static double inertial_error_at;
++static qboolean last_cursor, last_mirror=true;
++static qboolean lost_edge_armed, optical_lost;
++static double loss_started, next_tracking_report, worst_loss;
++static unsigned tracking_losses, tracking_returns;
++static void CameraReport(void) {
++ if(host.realtime<next_tracking_report)return;
++ if(tracking_losses || tracking_returns)
++  Con_Printf("PS Eye: losses %u returns %u longest %.0fms; gyro bridge %s\n",
++   tracking_losses,tracking_returns,worst_loss*1000,move_camera_fallback.value?"on":"off");
++ tracking_losses=tracking_returns=0;worst_loss=0;next_tracking_report=host.realtime+10;
++}
++
++qboolean PS3_MoveCameraCalibrating(void){return calibrating_ball;}
++qboolean PS3_MoveCameraTrackingReady(void){return started && have_frame && !calibrating_ball;}
++
++static void CameraStatus(const char *message) {
++ if(Q_strcmp(move_camera_status.string,message)) Cvar_FullSet("move_camera_status",message,FCVAR_READ_ONLY);
++}
++static void CameraLosePoint(void) { have_point=false; filtered_valid=false; edge_armed=false; }
++void PS3_MoveCameraColorChanged(void) { CameraLosePoint(); last_poll=0; }
++void PS3_MoveCameraReset(void) { optical_lost=lost_edge_armed=false; CameraLosePoint(); last_poll=0; clutch_held=recenter_on_release=false; }
++void PS3_MoveCameraClutch(qboolean held) {
++ if(clutch_held && !held) recenter_on_release=true;
++ clutch_held=held; optical_lost=lost_edge_armed=false; CameraLosePoint();
++}
++static void CameraSetCenter(float x,float y) {
++ center_x=x; center_y=y; centered=true; center_pending=false;
++ filtered_x=x; filtered_y=y; filtered_valid=true;
++ have_point=false; edge_armed=false;
++}
++static qboolean CameraLost(void) {
++ if(!optical_lost) {
++  optical_lost=true;loss_started=host.realtime;lost_edge_armed=edge_armed;
++  tracking_losses++;
++ }
++ CameraLosePoint();
++ // Gyro deltas are already bias/deadzone corrected, time bounded, and respect
++ // clutch/gesture/UI ownership. Bridge immediately, without a half-second freeze.
++ return !move_camera_fallback.value;
++}
++void PS3_MoveCameraShutdown(void) {
++ if(started) cameraStop(0);
++ if(opened) cameraClose(0);
++ if(camera_ready) cameraEnd();
++ if(container_ready) sysMemContainerDestroy(container);
++ if(module_ready) sysModuleUnload(SYSMODULE_CAMERA);
++ started=opened=camera_ready=container_ready=module_ready=false;
++ have_frame=have_point=calibrating_ball=false; selected=-1; optical_lost=lost_edge_armed=false;
++ retry_at=0; last_poll=0; last_image_update=0; CameraLosePoint(); center_pending=false; clutch_held=recenter_on_release=false;
++}
++/* GEM still needs an update cycle when there is no camera image. In particular,
++ * closing PS Eye must not stop the inertial pipeline. NO_VIDEO (6) is an
++ * informational result: UpdateStart still owns a matching UpdateFinish. */
++void PS3_MoveCameraPumpInertial(void) {
++ if(!move_camera.value && module_ready) PS3_MoveCameraShutdown();
++ if(move_camera.value && started && last_image_update>0 &&
++    host.realtime-last_image_update<=1.0/30.0)return;
++ halo_move_trace_stage(20);
++ int rc=gemUpdateStart(NULL,sysGetSystemTime());
++ if(rc==0 || rc==6) {
++  halo_move_trace_stage(21);
++  int finish=gemUpdateFinish();
++  rc=(finish==0 || finish==6)?0:finish;
++ }
++ if(rc && host.realtime>=inertial_error_at) {
++  Con_Printf("PS Move: no-image GEM update failed 0x%x\n",rc);
++  inertial_error_at=host.realtime+5;
++ }
++ halo_move_trace_stage(0);
++}
++static void CameraFailure(const char *stage,int rc) {
++ Con_Printf("PS Eye: %s failed 0x%x\n",stage,rc);
++ PS3_MoveCameraShutdown();
++ CameraStatus(va("%s: 0x%x - check PS Eye / Retry",stage,rc));
++ retry_at=host.realtime+5;
++}
++static void CameraRetry(void) { PS3_MoveCameraShutdown(); }
++static void CameraCalibrate(void) {
++ if(!started || selected<0) { CameraStatus("Connect PS Eye and Move, then enable tracking"); return; }
++ int rc=gemCalibrate(selected);
++ if(rc) { CameraStatus(va("Ball calibration failed: 0x%x",rc)); return; }
++ calibrating_ball=true; have_point=false;
++ CameraStatus("Hold lit ball still, facing the PS Eye");
++}
++static void CameraRecenter(void) {
++ if(!move_camera.value) { CameraStatus("Enable PS Eye tracking to recenter optical aim"); return; }
++ // Capture the next fresh visible image, never an old point from before loss.
++ recenter_on_release=true; center_pending=false; CameraLosePoint();
++ CameraStatus("Recenter requested - hold wand at neutral");
++}
++static void CameraCenter(void) {
++ if(!started || selected<0) { CameraStatus("Enable tracking and show the ball first"); return; }
++ center_pending=true; center_ready_at=host.realtime+.75; center_samples=0;
++ CameraLosePoint();
++ CameraStatus("Rest hand at neutral; hold still to set center");
++}
++
++void PS3_MoveCameraInit(void) {
++ Cvar_RegisterVariable(&move_camera); Cvar_RegisterVariable(&move_camera_sensitivity);
++ Cvar_RegisterVariable(&move_camera_mirror); Cvar_RegisterVariable(&move_camera_fallback);
++ Cvar_RegisterVariable(&move_camera_status);
++ Cvar_RegisterVariable(&move_camera_edge_turn); Cvar_RegisterVariable(&move_camera_edge_zone);
++ Cvar_RegisterVariable(&move_camera_turn_speed);
++ Cvar_RegisterVariable(&move_camera_stability); Cvar_RegisterVariable(&move_camera_steadiness);
++ Cmd_AddCommand("move_camera_retry",CameraRetry,"retry PS Eye tracking");
++ Cmd_AddCommand("move_camera_calibrate",CameraCalibrate,"calibrate the visible Move light ball");
++ Cmd_AddCommand("move_camera_recenter",CameraRecenter,"recenter optical aim at the next visible wand position");
++ Cmd_AddCommand("move_camera_center",CameraCenter,"set the current visible ball position as screen center");
++}
++static qboolean CameraStart(void) {
++ cameraType type;
++ int rc; const char *stage="Camera module";
++ rc=sysModuleLoad(SYSMODULE_CAMERA); if(rc<0) goto failed; module_ready=true;
++ stage="Camera initialization"; rc=cameraInit(); if(rc) goto failed; camera_ready=true;
++ stage="PS Eye detection"; rc=cameraGetType(0,&type); if(rc) goto failed;
++ if(type!=CAM_TYPE_PLAYSTATION_EYE) { rc=CAMERA_ERRO_NO_DEVICE_FOUND; goto failed; }
++ stage="Camera memory"; rc=sysMemContainerCreate(&container,0x200000); if(rc) goto failed; container_ready=true;
++ memset(&camera,0,sizeof(camera)); camera.format=CAM_FORM_RAW8;
++ camera.resolution=CAM_RESO_VGA; camera.framerate=60; camera.info_ver=0x0200;
++ camera.container=container; camera.readmode=0;
++ stage="Camera open"; rc=cameraOpenEx(0,&camera); if(rc) goto failed; opened=true;
++ stage="Camera prepare"; rc=gemPrepareCamera(128,.5f); if(rc) goto failed;
++ stage="Camera start"; rc=cameraStart(0); if(rc) goto failed; started=true;
++ CameraStatus("Show the lit ball to the PS Eye; hold still to calibrate");
++ return true;
++failed:
++ CameraFailure(stage,rc); return false;
++}
++/* Rate input is integrated once per engine poll, even if the camera runs slower.
++ * Relative aim still uses each image only once. No turn survives a clutch,
++ * menu transition, missing ball, stale camera, or long frame gap. */
++static void CameraEdgeTurn(qboolean cursor, qboolean blocked, double dt, float *yaw) {
++ if(PS3_MoveFreeAimLocked()) return;
++ if(!move_camera_edge_turn.value || !edge_armed || cursor || blocked || !have_point || last_cursor ||
++    dt<=0 || dt>.1 || host.realtime-last_visible>.1) return;
++ float zone=isfinite(move_camera_edge_zone.value)?bound(.3f,move_camera_edge_zone.value,.9f):.65f;
++ float speed=isfinite(move_camera_turn_speed.value)?bound(30.f,move_camera_turn_speed.value,360.f):180.f;
++ float offset=(last_x-.5f)*2.f;
++ float ramp=bound(0.f,(fabsf(offset)-zone)/(1.f-zone),1.f);
++ // Smooth entry into the zone, full speed at the edge. Y stays relative only.
++ ramp=ramp*ramp*(3.f-2.f*ramp);
++ *yaw-=copysignf(ramp*speed*(float)dt,offset);
++}
++qboolean PS3_MoveCameraFrame(int wand,qboolean cursor,qboolean blocked,float *yaw,float *pitch) {
++ cameraReadInfo frame; gemState state; gemImageState image;
++ int rc;
++ double dt=last_poll>0?host.realtime-last_poll:0;
++ last_poll=host.realtime;
++ // Reset before testing duplicate frames: opening a menu or holding the clutch
++ // must stop rate turning even when there is no new camera image this poll.
++ if(cursor || blocked) {have_point=false;edge_armed=false;lost_edge_armed=false;}
++ CameraReport();
++ if(move_camera_stability.value<2) {
++  Cvar_SetValue("move_camera_fallback",1); Cvar_SetValue("move_camera_stability",2);
++  Con_Printf("PS Eye: immediate gyro bridging enabled for optical loss\n");
++ }
++ if(!move_camera.value) {
++  if(module_ready) PS3_MoveCameraShutdown();
++  CameraStatus("Disabled - gyro only"); return false;
++ }
++ if(wand<0) { if(module_ready) PS3_MoveCameraShutdown(); have_point=false; CameraStatus("Waiting for Move wand"); return false; }
++ if(!started && (host.realtime<retry_at || !CameraStart())) return CameraLost();
++ if(wand!=selected) { selected=wand; CameraLosePoint(); calibrating_ball=false; centered=false; center_x=center_y=.5f; }
++ memset(&frame,0,sizeof(frame)); frame.version=0x0100; frame.buffer=camera.buffer;
++ rc=cameraReadEx(0,&frame);
++ if(rc && rc!=CAMERA_ERRO_TIMEOUT) { CameraFailure("Camera read",rc); return CameraLost(); }
++ if(rc || !frame.readcount || (have_frame && frame.frame==previous_frame)) {
++  if(host.realtime-last_visible>1.0/30.0) { CameraStatus("Tracking lost - show ball to PS Eye"); return CameraLost(); }
++  CameraEdgeTurn(cursor,blocked,dt,yaw);
++  return true; // relative deltas never integrate the same optical frame twice
++ }
++ have_frame=true; previous_frame=frame.frame;
++ if(!frame.buffer || (frame.buffer&127)) { CameraFailure("Camera buffer alignment",-1); return CameraLost(); }
++ rc=gemUpdateStart((void *)(uintptr_t)frame.buffer,frame.timestamp);
++ if(rc) { CameraFailure("Tracking update",rc); return CameraLost(); }
++ rc=gemUpdateFinish();
++ if(rc) { CameraFailure("Tracking finish",rc); return CameraLost(); }
++ last_image_update=host.realtime;
++ memset(&state,0,sizeof(state)); rc=gemGetState(wand,STATE_LATEST_IMAGE_TIME,0,&state);
++ if(rc==2 && !calibrating_ball) CameraCalibrate();
++ else if(rc==5) {
++  u32 hues[MAX_MOVES]; for(int i=0;i<MAX_MOVES;i++) hues[i]=8u<<24;
++  hues[wand]=4u<<24; int hue_rc=gemTrackHues(hues,NULL);
++  if(hue_rc) CameraStatus(va("Tracking color failed: 0x%x",hue_rc));
++ }
++ if(rc) {
++  if(rc==3 || rc==4) CameraStatus("Calibrating ball - hold still in camera view");
++  else if(rc!=2 && rc!=5) CameraStatus(va("Waiting for optical tracking (state %d)",rc));
++  return CameraLost();
++ }
++ calibrating_ball=false;
++ memset(&image,0,sizeof(image)); rc=gemGetImageState(wand,&image);
++ if(rc || !image.visible || !(state.tracking&GEM_TRACKING_VISIBLE) ||
++  !isfinite(image.u) || !isfinite(image.v) || image.u<0 || image.u>640 || image.v<0 || image.v>480) {
++  center_samples=0; CameraStatus("Ball hidden - gyro bridge active"); return CameraLost();
++ }
++ if(last_mirror != (move_camera_mirror.value!=0)) {
++  last_mirror=move_camera_mirror.value!=0; center_x=center_y=.5f; centered=false; CameraLosePoint();
++ }
++ if(optical_lost) {
++  double gap=host.realtime-loss_started;
++  worst_loss=fmax(worst_loss,gap);tracking_returns++;
++  // Rebase the relative optical delta: never replay motion supplied by gyro.
++  // A brief dropout keeps an intentional edge turn armed. Longer loss, menus
++  // and clutch changes still require neutral before continuous turning.
++  edge_armed=lost_edge_armed && gap<=.25 && !cursor && !blocked;
++  optical_lost=lost_edge_armed=false;
++ }
++ raw_x=image.u/640.f; raw_y=image.v/480.f;
++ if(move_camera_mirror.value) raw_x=1.f-raw_x;
++ // Filter in camera coordinates before sensitivity and before cursor clamping.
++ // A small positional deadband absorbs stationary ball jitter without integrating
++ // it into drift; larger intentional movement is smoothed over roughly 25ms.
++ float steadiness=isfinite(move_camera_steadiness.value)?bound(0.f,move_camera_steadiness.value,3.f):1.f;
++ if(!filtered_valid) {filtered_x=raw_x;filtered_y=raw_y;filtered_valid=true;}
++ else {
++  float alpha=steadiness>0 ? 1.f-expf(-(float)bound(0.,host.realtime-last_visible,.1)/(.025f*steadiness)) : 1.f;
++  float dx=raw_x-filtered_x,dy=raw_y-filtered_y;
++  float ex=steadiness*1.5f/640.f,ey=steadiness*1.5f/480.f;
++  filtered_x+=copysignf(fmaxf(0,fabsf(dx)-ex)*alpha,dx);
++  filtered_y+=copysignf(fmaxf(0,fabsf(dy)-ey)*alpha,dy);
++ }
++ if(!centered) CameraSetCenter(raw_x,raw_y); // begin at the user's hand, not camera center
++ if(recenter_on_release && !blocked) {
++  CameraSetCenter(raw_x,raw_y); recenter_on_release=false;
++ }
++ if(center_pending) {
++  have_point=false; edge_armed=false; last_visible=host.realtime;
++  CameraStatus("Rest hand at neutral; hold still to set center");
++  if(host.realtime<center_ready_at) return true;
++  if(!center_samples || fabsf(raw_x-center_start_x)>.015f || fabsf(raw_y-center_start_y)>.015f) {
++   center_start_x=raw_x; center_start_y=raw_y; center_sum_x=center_sum_y=0;
++   center_samples=0; center_still_at=host.realtime;
++  }
++  center_sum_x+=raw_x; center_sum_y+=raw_y; center_samples++;
++  if(host.realtime-center_still_at>=.35 && center_samples>=8)
++   CameraSetCenter(center_sum_x/center_samples,center_sum_y/center_samples);
++  return true;
++ }
++ float gain=isfinite(move_camera_sensitivity.value)?bound(.25f,move_camera_sensitivity.value,4.f):1.f;
++ float x=.5f+(filtered_x-center_x)*gain;
++ float y=.5f+(filtered_y-center_y)*gain;
++ qboolean continuous=have_point && !last_cursor;
++ last_visible=host.realtime;
++ CameraStatus(centered?"Light ball tracked - center calibrated":"Light ball tracked - Center pointer to align");
++ if(blocked) have_point=false;
++ else if(cursor) PS3_MoveCursorAbsolute(bound(0.f,x,1.f),bound(0.f,y,1.f));
++ else if(have_point && !last_cursor) {
++  // Reacquisition already clears the baseline. Do not discard large valid
++  // tracked movements: discarding only the outward sweep makes the return
++  // sweep change the view, which feels like an ever-moving neutral point.
++  *yaw=-(x-last_x)*90.f; *pitch=(y-last_y)*60.f;
++ }
++ float zone=isfinite(move_camera_edge_zone.value)?bound(.3f,move_camera_edge_zone.value,.9f):.65f;
++ if(!cursor && !blocked && fabsf((x-.5f)*2.f)<zone-.08f) edge_armed=true;
++ last_x=x; last_y=y; last_cursor=cursor; have_point=!blocked;
++ if(continuous) CameraEdgeTurn(cursor,blocked,dt,yaw);
++ return true;
++}
+diff --git a/port/ps3/extensions/ps3_move_camera.h b/port/ps3/extensions/ps3_move_camera.h
+new file mode 100644
+index 00000000..9898e5eb
+--- /dev/null
++++ b/port/ps3/extensions/ps3_move_camera.h
+@@ -0,0 +1,13 @@
++#ifndef PS3_MOVE_CAMERA_H
++#define PS3_MOVE_CAMERA_H
++qboolean PS3_MoveCameraCalibrating(void);
++qboolean PS3_MoveCameraTrackingReady(void);
++void PS3_MoveCameraColorChanged(void);
++void PS3_MoveCameraInit(void);
++void PS3_MoveCameraPumpInertial(void);
++void PS3_MoveCameraShutdown(void);
++void PS3_MoveCameraReset(void);
++void PS3_MoveCameraClutch(qboolean held);
++qboolean PS3_MoveCameraFrame(int wand, qboolean cursor, qboolean blocked, float *yaw, float *pitch);
++void PS3_MoveCursorAbsolute(float x, float y);
++#endif
+diff --git a/port/ps3/extensions/ps3_move_gestures.h b/port/ps3/extensions/ps3_move_gestures.h
+new file mode 100644
+index 00000000..2172e4b0
+--- /dev/null
++++ b/port/ps3/extensions/ps3_move_gestures.h
+@@ -0,0 +1,77 @@
++#ifndef PS3_MOVE_GESTURES_H
++#define PS3_MOVE_GESTURES_H
++#include <math.h>
++#include <stdint.h>
++#include <string.h>
++/* GEM acceleration is in G; angular velocity is radians/second. Detection uses
++ * fresh sensor timestamps, a gravity high-pass filter, and a neutral rearm. */
++typedef struct {
++ uint64_t previous;
++ float gravity[3], angle;
++ double started, quiet_since, cooldown_until;
++ int mode, direction, axis, peaks, sign, peak_ready, armed;
++} ps3_gesture_state_t;
++typedef struct { int locked, turn, shake; } ps3_gesture_result_t;
++static ps3_gesture_result_t PS3_GestureStep(ps3_gesture_state_t *s,uint64_t stamp,
++ const float *acc,float gx,float gy,float gz,int allow,int shake,int flick,
++ float shake_limit,float flick_limit,float cooldown)
++{
++ ps3_gesture_result_t out={0};
++ if(!allow || !isfinite(gx) || !isfinite(gy) || !isfinite(gz) ||
++    !isfinite(acc[0]) || !isfinite(acc[1]) || !isfinite(acc[2])) {memset(s,0,sizeof(*s));return out;}
++ if(stamp==s->previous) {out.locked=s->mode!=0;return out;}
++ if(!s->previous || stamp<s->previous || stamp-s->previous>100000) {
++  memset(s,0,sizeof(*s));s->previous=stamp;
++  for(int i=0;i<3;i++)s->gravity[i]=acc[i];
++  return out;
++ }
++ float dt=(stamp-s->previous)*.000001f;s->previous=stamp;
++ double now=stamp*.000001;
++ shake_limit=isfinite(shake_limit)?fminf(2.5f,fmaxf(.3f,shake_limit)):.8f;
++ flick_limit=isfinite(flick_limit)?fminf(8.f,fmaxf(1.5f,flick_limit)):3.f;
++ cooldown=isfinite(cooldown)?fminf(3.f,fmaxf(.3f,cooldown)):.8f;
++ float high[3],maximum=0;int axis=0;
++ for(int i=0;i<3;i++) {
++  high[i]=acc[i]-s->gravity[i];
++  s->gravity[i]+=high[i]*(1-expf(-dt/.35f));
++  if(fabsf(high[i])>maximum){maximum=fabsf(high[i]);axis=i;}
++ }
++ int quiet=fabsf(gx)<.6f && fabsf(gy)<.6f && fabsf(gz)<.6f && maximum<shake_limit*.45f;
++ if(quiet) {if(!s->quiet_since)s->quiet_since=now;} else s->quiet_since=0;
++ if(s->mode==3) {
++  if((s->quiet_since && now-s->quiet_since>=.18) || now-s->started>1.) {
++   s->mode=0;s->armed=0;s->quiet_since=0;
++  }
++  // Consume the release sample as well; optical neutral resets next frame.
++  out.locked=1;return out;
++ }
++ if(!s->mode) {
++  if(s->quiet_since && now-s->quiet_since>=.18 && now>=s->cooldown_until)s->armed=1;
++  if(!s->armed)return out;
++  if(shake && maximum>=shake_limit) {
++   s->mode=2;s->axis=axis;s->sign=high[axis]>0?1:-1;s->peaks=1;s->peak_ready=0;s->started=now;
++  } else if(flick && fabsf(gy)>=flick_limit && fabsf(gy)>fabsf(gx)*1.5f && fabsf(gy)>fabsf(gz)*1.5f && maximum<shake_limit) {
++   s->mode=1;s->direction=gy>0?1:-1;s->angle=0;s->started=now;
++  }
++ }
++ if(s->mode==1) {
++  s->angle+=gy*dt*s->direction;
++  if(s->angle>=.14f && now-s->started>=.02) {out.turn=s->direction;s->mode=3;}
++  else if(gy*s->direction<0 || now-s->started>.35)s->mode=3;
++ } else if(s->mode==2) {
++  float value=high[s->axis];
++  if(fabsf(value)<shake_limit*.4f)s->peak_ready=1;
++  // Opposite peaks can cross the deadband between samples at low frame rates.
++  if(fabsf(value)>=shake_limit && (value>0?1:-1)!=s->sign) {
++   s->sign=value>0?1:-1;s->peaks++;s->peak_ready=0;
++   if(s->peaks>=3){out.shake=1;s->mode=3;}
++  }
++  if(now-s->started>.6)s->mode=3;
++ }
++ if(s->mode) {
++  out.locked=1;s->armed=0;
++  if(s->mode==3) {s->cooldown_until=now+cooldown;s->quiet_since=0;s->started=now;}
++ }
++ return out;
++}
++#endif
+diff --git a/port/ps3/extensions/ps3_move_math.h b/port/ps3/extensions/ps3_move_math.h
+new file mode 100644
+index 00000000..a35b52e3
+--- /dev/null
++++ b/port/ps3/extensions/ps3_move_math.h
+@@ -0,0 +1,26 @@
++#ifndef PS3_MOVE_MATH_H
++#define PS3_MOVE_MATH_H
++#include <math.h>
++#include <stdint.h>
++/* Gem inertial gyro is radians/sec: +X pitches up, +Y yaws left.
++ * Timestamp gaps are discarded, not integrated into a reconnect/pause jump. */
++static int PS3_MoveDelta(uint64_t previous, uint64_t now, float gx, float gy,
++ float sensitivity, float deadzone, int invert, int clutch, float *yaw, float *pitch)
++{
++ float dt;
++ *yaw = *pitch = 0;
++ if (!previous || now <= previous || now - previous > 100000 || clutch) return 0;
++ if (!isfinite(gx) || !isfinite(gy) || fabsf(gx)>64.f || fabsf(gy)>64.f) return 0;
++ if (!isfinite(sensitivity)) sensitivity = 2;
++ if (!isfinite(deadzone)) deadzone = 0.015f;
++ sensitivity = fminf(8, fmaxf(0.25f, sensitivity));
++ deadzone = fminf(0.2f, fmaxf(0, deadzone));
++ dt = (float)(now - previous) * 0.000001f;
++ /* Continuous deadzone avoids a step when crossing the drift threshold. */
++ gx = copysignf(fmaxf(0, fabsf(gx) - deadzone), gx);
++ gy = copysignf(fmaxf(0, fabsf(gy) - deadzone), gy);
++ *yaw = gy * dt * 57.2957795f * sensitivity;
++ *pitch = gx * dt * 57.2957795f * sensitivity * (invert ? 1 : -1);
++ return 1;
++}
++#endif
+diff --git a/port/ps3/extensions/settings.inc b/port/ps3/extensions/settings.inc
+new file mode 100644
+index 00000000..d61ed131
+--- /dev/null
++++ b/port/ps3/extensions/settings.inc
+@@ -0,0 +1,30 @@
++EXT_SETTING("move_enable", "0", "enable PS Move wand input (restart required)")
++EXT_SETTING("move_blue_orb", "0", "Blue orb while Move is in use; preserve optical tracking")
++EXT_SETTING("move_sensitivity", "1.5", "view degrees per degree of Move rotation")
++EXT_SETTING("move_freeaim_turn_button", "0", "independent aim turn button: 0 mapped clutch, 1 T, 2 X, 3 Square, 4 Circle, 5 Triangle, 6 Start, 7 Select, 8 Move")
++EXT_SETTING("move_freeaim_invert", "1", "independent aim: release to turn, hold to lock camera and aim reticle")
++EXT_SETTING("move_freeaim_turn_gain", "5.5", "independent camera turn multiplier, 0.5 to 12; fine aim is unchanged")
++EXT_SETTING("move_deadzone", "0.0500000007", "Move gyro drift deadzone in radians/sec")
++EXT_SETTING("move_invert_y", "0", "invert Move pitch")
++EXT_SETTING("move_nav", "1", "use Navigation button layout with a connected Move")
++EXT_SETTING("move_nav_port", "0", "Navigation pad port, 0 automatic or 1-7")
++EXT_SETTING("move_gestures", "1", "enable optional Move gestures in gameplay")
++EXT_SETTING("move_gesture_shake", "1", "shake action: 0 off, 1 reload, 2 next weapon, 3 use, 4 jump")
++EXT_SETTING("move_gesture_flick", "0", "enable left/right flick turns")
++EXT_SETTING("move_gesture_angle", "90", "flick turn degrees")
++EXT_SETTING("move_gesture_shake_limit", "0.500000", "shake acceleration threshold in G")
++EXT_SETTING("move_gesture_flick_limit", "3", "flick yaw threshold in radians per second")
++EXT_SETTING("move_gesture_cooldown", "0.8", "seconds between gestures")
++EXT_SETTING("move_freeaim", "1", "independent Move reticle with configurable camera hold behavior")
++EXT_SETTING("move_freeaim_range", "0.699999988", "maximum reticle distance from center, fraction of half-screen")
++EXT_SETTING("r_stereo", "0", "Enable stereoscopic rendering (restart required)")
++EXT_SETTING("r_stereo_mode", "1", "1 side-by-side, 2 over/under, 3 HDMI frame-packed, 4 frame-sequential (restart required)")
++EXT_SETTING("r_stereo_depth", "0.5", "Eye separation multiplier, 0 to 3")
++EXT_SETTING("r_stereo_convergence", "10", "Zero parallax distance in world units")
++EXT_SETTING("r_stereo_swap", "0", "Swap left and right eyes")
++EXT_SETTING("move_bind_t", "512", "Move T: PS3 button mask (R2 fire)")
++EXT_SETTING("move_bind_move", "1024", "Move button: L1 grenade switch")
++EXT_SETTING("move_bind_square", "32768", "Square: reload/use")
++EXT_SETTING("move_bind_cross", "16384", "Cross: jump")
++EXT_SETTING("move_bind_circle", "8192", "Circle: melee")
++EXT_SETTING("move_bind_triangle", "4096", "Triangle: change weapon")
+diff --git a/port/ps3/extensions/settings.json b/port/ps3/extensions/settings.json
+new file mode 100644
+index 00000000..2f904b63
+--- /dev/null
++++ b/port/ps3/extensions/settings.json
+@@ -0,0 +1,192 @@
++[
++  {
++    "name": "move_enable",
++    "default": "0",
++    "description": "enable PS Move wand input (restart required)"
++  },
++  {
++    "name": "move_blue_orb",
++    "default": "0",
++    "description": "Blue orb while Move is in use; uses a trackable blue hue with PS Eye"
++  },
++  {
++    "name": "move_sensitivity",
++    "default": "1.5",
++    "description": "view degrees per degree of Move rotation"
++  },
++  {
++    "name": "move_freeaim_turn_button",
++    "default": "0",
++    "description": "independent aim turn button: 0 mapped clutch, 1 T, 2 X, 3 Square, 4 Circle, 5 Triangle, 6 Start, 7 Select, 8 Move"
++  },
++  {
++    "name": "move_freeaim_invert",
++    "default": "1",
++    "description": "independent aim: release to turn, hold to lock camera and aim reticle"
++  },
++  {
++    "name": "move_freeaim_turn_gain",
++    "default": "5.5",
++    "description": "independent camera turn multiplier, 0.5 to 12; fine aim is unchanged"
++  },
++  {
++    "name": "move_deadzone",
++    "default": "0.0500000007",
++    "description": "Move gyro drift deadzone in radians/sec"
++  },
++  {
++    "name": "move_invert_y",
++    "default": "0",
++    "description": "invert Move pitch"
++  },
++  {
++    "name": "move_nav",
++    "default": "1",
++    "description": "use Navigation button layout with a connected Move"
++  },
++  {
++    "name": "move_nav_port",
++    "default": "0",
++    "description": "Navigation pad port, 0 automatic or 1-7"
++  },
++  {
++    "name": "move_gestures",
++    "default": "1",
++    "description": "enable optional Move gestures in gameplay"
++  },
++  {
++    "name": "move_gesture_shake",
++    "default": "1",
++    "description": "shake action: 0 off, 1 reload, 2 next weapon, 3 use, 4 jump"
++  },
++  {
++    "name": "move_gesture_flick",
++    "default": "0",
++    "description": "enable left/right flick turns"
++  },
++  {
++    "name": "move_gesture_angle",
++    "default": "90",
++    "description": "flick turn degrees"
++  },
++  {
++    "name": "move_gesture_shake_limit",
++    "default": "0.500000",
++    "description": "shake acceleration threshold in G"
++  },
++  {
++    "name": "move_gesture_flick_limit",
++    "default": "3",
++    "description": "flick yaw threshold in radians per second"
++  },
++  {
++    "name": "move_gesture_cooldown",
++    "default": "0.8",
++    "description": "seconds between gestures"
++  },
++  {
++    "name": "move_camera",
++    "default": "0",
++    "description": "use PS Eye light-ball tracking"
++  },
++  {
++    "name": "move_camera_sensitivity",
++    "default": "3.250000",
++    "description": "light-ball cursor and look sensitivity"
++  },
++  {
++    "name": "move_camera_mirror",
++    "default": "0",
++    "description": "mirror camera X for natural screen pointing"
++  },
++  {
++    "name": "move_camera_fallback",
++    "default": "1",
++    "description": "use gyro if the light ball is not tracked"
++  },
++  {
++    "name": "move_camera_edge_turn",
++    "default": "0",
++    "description": "continuous horizontal turning near optical aim edges"
++  },
++  {
++    "name": "move_camera_edge_zone",
++    "default": "0.65",
++    "description": "central optical aim region, fraction of half-width"
++  },
++  {
++    "name": "move_camera_turn_speed",
++    "default": "300",
++    "description": "maximum optical edge turn speed in degrees/sec"
++  },
++  {
++    "name": "move_camera_steadiness",
++    "default": "1",
++    "description": "optical jitter filtering strength, 0 to 3"
++  },
++  {
++    "name": "move_freeaim",
++    "default": "1",
++    "description": "independent Move reticle with configurable camera hold behavior"
++  },
++  {
++    "name": "move_freeaim_range",
++    "default": "0.699999988",
++    "description": "maximum reticle distance from center, fraction of half-screen"
++  },
++  {
++    "name": "r_stereo",
++    "default": "0",
++    "description": "Enable stereoscopic rendering (restart required)"
++  },
++  {
++    "name": "r_stereo_mode",
++    "default": "1",
++    "description": "1 side-by-side, 2 over/under, 3 HDMI frame-packed, 4 frame-sequential (restart required)"
++  },
++  {
++    "name": "r_stereo_depth",
++    "default": "0.5",
++    "description": "Eye separation multiplier, 0 to 3"
++  },
++  {
++    "name": "r_stereo_convergence",
++    "default": "10",
++    "description": "Zero parallax distance in world units"
++  },
++  {
++    "name": "r_stereo_swap",
++    "default": "0",
++    "description": "Swap left and right eyes"
++  },
++  {
++    "name": "move_bind_t",
++    "default": "512",
++    "description": "Move T: PS3 button mask (R2 fire)"
++  },
++  {
++    "name": "move_bind_move",
++    "default": "1024",
++    "description": "Move button: L1 grenade switch"
++  },
++  {
++    "name": "move_bind_square",
++    "default": "32768",
++    "description": "Square: reload/use"
++  },
++  {
++    "name": "move_bind_cross",
++    "default": "16384",
++    "description": "Cross: jump"
++  },
++  {
++    "name": "move_bind_circle",
++    "default": "8192",
++    "description": "Circle: melee"
++  },
++  {
++    "name": "move_bind_triangle",
++    "default": "4096",
++    "description": "Triangle: change weapon"
++  }
++]
+diff --git a/port/ps3/src/ps3_gpu.c b/port/ps3/src/ps3_gpu.c
+index 9908dc97..56730c91 100644
+--- a/port/ps3/src/ps3_gpu.c
++++ b/port/ps3/src/ps3_gpu.c
+@@ -2,6 +2,7 @@
+ ps3gl. One thread calls it at a time: the Direct3D thread, or the game's while that one is idle (d3d8_rsx.c). */
+ 
+ #include "ps3_gpu.h"
++#include "halo_extensions.h"
+ #include "ps3_spu.h"
+ #include "ps3_system.h"
+ #include "ps3_timers.h"
+@@ -1303,6 +1304,8 @@ static void blit_quad(unsigned display_width, unsigned display_height, float lef
+ 	ps3_gpu_draw(GCM_TYPE_QUADS, 0, 4);
+ }
+ 
++static int extension_blit;
++static float extension_rect[4];
+ static void blit_draw(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t height)
+ {
+ 	unsigned display_width, display_height, picture_width, picture_height;
+@@ -1310,7 +1313,7 @@ static void blit_draw(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t
+ 	struct ps3_gpu_texture texture;
+ 	uint32_t unit;
+ 
+-	ps3_video_size(&display_width, &display_height);
++	ps3_video_present_size(&display_width, &display_height);
+ 	/* the back buffer is drawn at the display's lines (d3d8_rsx.c's screen scale): pixel for pixel in the middle,
+ 	else scaled to fit */
+ 	picture_width = width;
+@@ -1344,8 +1347,12 @@ static void blit_draw(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t
+ 	viewport_offset[3] = 0.0f;
+ 	rsxSetViewport(context, 0, 0, (u16)display_width, (u16)display_height, 0.0f, 1.0f, scale, viewport_offset);
+ 	rsxSetViewportClip(context, 0, (u16)display_width, (u16)display_height);
++    if (extension_blit) {
++        left=extension_rect[0]; top=extension_rect[1];
++        picture_width=(unsigned)extension_rect[2]; picture_height=(unsigned)extension_rect[3];
++    }
+ 	/* black bars where the picture does not cover the display (4:3) */
+-	if (picture_width < display_width || picture_height < display_height)
++	if (!extension_blit && (picture_width < display_width || picture_height < display_height))
+ 	{
+ 		rsxSetClearColor(context, 0xff000000u);
+ 		rsxClearSurface(context, GCM_CLEAR_R | GCM_CLEAR_G | GCM_CLEAR_B | GCM_CLEAR_A);
+@@ -1728,6 +1735,54 @@ static void draw_stamps_read(void)
+ 	draw_stamps.count = 0;
+ }
+ 
++static struct {
++    void *memory;
++    uint32_t offset, pitch, width, height, bytes;
++} extension_eyes[2];
++void halo_gpu_capture_eye(int eye, uint32_t offset, uint32_t pitch, uint32_t width, uint32_t height)
++{
++    uint32_t bytes;
++    if (eye<0 || eye>1 || !width || !height) return;
++    bytes=width*height*4;
++    if (!extension_eyes[eye].memory || extension_eyes[eye].bytes!=bytes) {
++        if (extension_eyes[eye].memory) ps3_gpu_memory_free(extension_eyes[eye].memory,
++            extension_eyes[eye].bytes,_ps3_gpu_memory_target);
++        extension_eyes[eye].memory=ps3_gpu_memory_allocate(bytes,128,_ps3_gpu_memory_target,&extension_eyes[eye].offset);
++        extension_eyes[eye].bytes=bytes;
++    }
++    if (!extension_eyes[eye].memory) return;
++    extension_eyes[eye].pitch=width*4;
++    extension_eyes[eye].width=width;extension_eyes[eye].height=height;
++    /* Do not let the transfer engine read a render target before its 3D draws finish. */
++    {
++        static uint32_t serial;
++        rsxSetWriteBackendLabel(context,73,++serial);
++        rsxSetWaitLabel(context,73,serial);
++    }
++    rsxSetTransferImage(context,GCM_TRANSFER_LOCAL_TO_LOCAL,extension_eyes[eye].offset,width*4,0,0,
++        offset,pitch,0,0,width,height,4);
++    rsxInvalidateTextureCache(context,GCM_INVALIDATE_TEXTURE);
++}
++static void extension_present_views(uint32_t offset,uint32_t pitch,uint32_t width,uint32_t height)
++{
++    int mode=ps3_video_stereo_mode(), eye;
++    unsigned dw,dh;
++    ps3_video_present_size(&dw,&dh);
++    if (!mode) { if(width && height)blit_draw(offset,pitch,width,height); return; }
++    ps3_video_clear(0xff000000);
++    for(eye=0;eye<2;eye++) {
++        if (mode==4 && eye) {ps3_video_end_frame();ps3_video_begin_frame();ps3_video_clear(0xff000000);}
++        extension_blit=1;
++        extension_rect[0]=mode==1 ? eye*(dw/2) : 0;
++        extension_rect[1]=mode==2 ? eye*(dh/2) : mode==3 ? eye*750 : 0;
++        extension_rect[2]=mode==1 ? dw/2 : dw;
++        extension_rect[3]=mode==2 ? dh/2 : mode==3 ? 720 : dh;
++        if(extension_eyes[eye].memory)blit_draw(extension_eyes[eye].offset,extension_eyes[eye].pitch,
++            extension_eyes[eye].width,extension_eyes[eye].height);
++        else if(width && height)blit_draw(offset,pitch,width,height);
++        extension_blit=0;
++    }
++}
+ void ps3_gpu_present(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t height)
+ {
+ 	uint64_t span;
+@@ -1737,8 +1792,7 @@ void ps3_gpu_present(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t h
+ 	span = ps3_timer_now();
+ 	ps3_video_begin_frame();
+ 	ps3_timer_add(_ps3_timer_flip_wait, span);
+-	if (width && height)
+-		blit_draw(offset, pitch, width, height);
++	extension_present_views(offset,pitch,width,height);
+ 	checkpoint(_checkpoint_blit);
+ 	/* the frame's last timestamp (_ps3_timer_present: the time after the render's) */
+ 	ps3_gpu_timestamp(_ps3_timer_present);
+diff --git a/port/ps3/src/ps3_input.c b/port/ps3/src/ps3_input.c
+index ac1cd1ff..711cad8b 100644
+--- a/port/ps3/src/ps3_input.c
++++ b/port/ps3/src/ps3_input.c
+@@ -1,6 +1,7 @@
+ /* Pad polling as in ioQuake3-PS3 ps3_input.c and xashPS3 in_ps3.c. */
+ 
+ #include "ps3_input.h"
++#include "halo_extensions.h"
+ #include "ps3_system.h"
+ 
+ #include <string.h>
+@@ -72,10 +73,12 @@ void ps3_input_init(void)
+ 	memset(pads, 0, sizeof(pads));
+ 	memset(pad_data, 0, sizeof(pad_data));
+ 	initialized = 1;
++	halo_ext_init();
+ }
+ 
+ void ps3_input_shutdown(void)
+ {
++	halo_move_shutdown();
+ 	if (initialized)
+ 		ioPadEnd();
+ 	initialized = 0;
+@@ -110,11 +113,12 @@ void ps3_input_poll(void)
+ 			continue;
+ 		decode(pad, &pad_data[port]);
+ 	}
++	halo_ext_poll(pads);
+ }
+ 
+ const struct ps3_pad *ps3_input_pad(int port)
+ {
+-	return &pads[port];
++	return halo_ext_pad(port, &pads[port]);
+ }
+ 
+ /* the motors run until the next call (ioQuake3-PS3 PS3_SetRumble) */
+@@ -124,6 +128,7 @@ void ps3_input_rumble(int port, int large, int small)
+ 
+ 	if (!initialized || port < 0 || port >= PS3_PAD_PORTS)
+ 		return;
++	if(port==0 && halo_move_connected()){extern void halo_move_rumble(int);halo_move_rumble(large);}
+ 	memset(&act, 0, sizeof(act));
+ 	act.small_motor = small ? 1 : 0;
+ 	act.large_motor = (u8)(large < 0 ? 0 : large > 255 ? 255 : large);
+diff --git a/port/ps3/src/ps3_main.c b/port/ps3/src/ps3_main.c
+index 3f28321c..8d07f253 100644
+--- a/port/ps3/src/ps3_main.c
++++ b/port/ps3/src/ps3_main.c
+@@ -20,7 +20,7 @@ SYS_PROCESS_PARAM(1001, 0x100000);
+ 
+ /* above the game's threads (1001): it sleeps in its vsync waits */
+ #define DISPLAY_PRIORITY 1000
+-#define HEARTBEAT_SECONDS 10
++#define HEARTBEAT_SECONDS 2
+ 
+ int halo_xbox_main(void);
+ void platform_kernel_initialize(void);
+@@ -28,6 +28,7 @@ int platform_memory_initialize(void);
+ void platform_memory_usage(uint32_t *mapped_mb, uint32_t *peak_mb);
+ int platform_heartbeat(void);
+ void ps3_host_report_blocked(void);
++void halo_move_trace_report(void);
+ 
+ static volatile int game_status = _ps3_host_status_running;
+ /* main()'s frame and the game thread's stack, logged at the start */
+@@ -148,6 +149,7 @@ static void display_main(void *argument)
+ 		if (ps3_time_seconds() >= next_heartbeat)
+ 		{
+ 			ps3_log_printf("[hb] t=%.0fs display frames %u\n", ps3_time_seconds(), frame);
++			halo_move_trace_report();
+ 			ps3_video_flip_report();
+ 			if (platform_heartbeat())
+ 				main_thread_report();
+diff --git a/port/ps3/src/ps3_system.c b/port/ps3/src/ps3_system.c
+index 514e8d9d..01b88f05 100644
+--- a/port/ps3/src/ps3_system.c
++++ b/port/ps3/src/ps3_system.c
+@@ -27,7 +27,7 @@
+ #include <sysutil/sysutil.h>
+ 
+ #ifndef PS3_LOG_IP
+-#define PS3_LOG_IP "192.168.178.99"
++#define PS3_LOG_IP "127.0.0.1"
+ #endif
+ #define PS3_LOG_PORT 18194
+ #define PS3_DATA_FOLDER "HaloCE"
+@@ -35,6 +35,8 @@
+ 
+ static int log_socket = -1;
+ static struct sockaddr_in log_address;
++/* Configure the diagnostic receiver using log_ip.txt on the PS3. */
++static char trace_log_ip[32]=PS3_LOG_IP;
+ static sys_mutex_t log_mutex;
+ static int log_mutex_ready;
+ 
+@@ -137,11 +139,20 @@ static void log_init(void)
+ 	if (log_socket < 0)
+ 		return;
+ 	memset(&log_address, 0, sizeof(log_address));
++	{
++		char configured[32];
++		FILE *file=fopen("/dev_hdd0/data/HaloCE/log_ip.txt","r");
++		if(file){
++			if(fscanf(file,"%31s",configured)==1 && inet_addr(configured)!=INADDR_NONE && inet_addr(configured)!=0)
++				snprintf(trace_log_ip,sizeof(trace_log_ip),"%s",configured);
++			fclose(file);
++		}
++	}
+ 	/* PSL1GHT's sockaddr_in has a BSD sin_len; with 0, sendto fails with ENOENT */
+ 	log_address.sin_len = sizeof(log_address);
+ 	log_address.sin_family = AF_INET;
+ 	log_address.sin_port = htons(PS3_LOG_PORT);
+-	log_address.sin_addr.s_addr = inet_addr(PS3_LOG_IP);
++	log_address.sin_addr.s_addr = inet_addr(trace_log_ip);
+ }
+ 
+ /* ---------- XMB exit */
+@@ -350,7 +361,7 @@ void ps3_system_init(void)
+ 	sysModuleLoad(SYSMODULE_NET);
+ 	net_result = netInitialize();
+ 	log_init();
+-	ps3_log_printf("[ps3] netInitialize=%d, log to " PS3_LOG_IP ":%d\n", net_result, PS3_LOG_PORT);
++	ps3_log_printf("[Move Reticle Fix 7] netInitialize=%d, log to %s:%d\n", net_result, trace_log_ip, PS3_LOG_PORT);
+ 
+ 	/* priority 1000: above the game threads (1001), which can keep both PPE threads busy; lower
+ 	numbers run first, and it sleeps 100 ms per pass */
+diff --git a/port/ps3/src/ps3_video.c b/port/ps3/src/ps3_video.c
+index 157b78a4..0112d022 100644
+--- a/port/ps3/src/ps3_video.c
++++ b/port/ps3/src/ps3_video.c
+@@ -2,6 +2,7 @@
+ comments give the hardware results behind each rule. */
+ 
+ #include "ps3_video.h"
++#include "halo_extensions.h"
+ #include "ps3_system.h"
+ 
+ #include <malloc.h>
+@@ -24,6 +25,7 @@ static gcmContextData *context;
+ static void *host_buffer;
+ static u32 width = 1280, height = 720, pitch;
+ static int widescreen = 1;
++static int extension_mode;
+ /* the display buffers in tiled regions 0 to 2 (rsxtest_tile's), which the RSX writes faster */
+ #define TILED_DISPLAY_BUFFERS 1
+ static void *color_buffer[BUFFER_COUNT];
+@@ -129,8 +131,19 @@ int ps3_video_init(void)
+ 		ps3_log_printf("[vid] videoGetResolution(%d) failed\n", (int)resolution_id);
+ 		return 0;
+ 	}
++    extension_mode=halo_ext_stereo_mode();
++    if (extension_mode==3) {
++        if (resolution_id!=VIDEO_RESOLUTION_720 || videoGetResolutionAvailability(VIDEO_PRIMARY,
++            VIDEO_RESOLUTION_720_3D_FRAME_PACKING,VIDEO_ASPECT_16_9,0)<=0) {
++            ps3_log_printf("[extensions] HDMI frame packing unavailable; using SBS\n");extension_mode=1;
++        } else {
++            resolution_id=VIDEO_RESOLUTION_720_3D_FRAME_PACKING;
++            videoGetResolution(resolution_id,&resolution);
++        }
++    }
++    if(extension_mode==4 && resolution_id!=VIDEO_RESOLUTION_720)extension_mode=1;
+ 	width = resolution.width;
+-	height = resolution.height;
++	height = extension_mode==3 ? 1470 : resolution.height;
+ 	widescreen = aspect != VIDEO_ASPECT_4_3;
+ #if TILED_DISPLAY_BUFFERS
+ 	pitch = gcmGetTiledPitchSize(width * 4);
+@@ -233,7 +246,7 @@ gcmContextData *ps3_video_context(void)
+ void ps3_video_size(unsigned *out_width, unsigned *out_height)
+ {
+ 	*out_width = width;
+-	*out_height = height;
++	*out_height = extension_mode==3 ? 720 : height;
+ }
+ 
+ int ps3_video_widescreen(void)
+@@ -333,3 +346,6 @@ unsigned ps3_video_memory_bytes(void)
+ {
+ 	return ready ? BUFFER_COUNT * pitch * height + width * height * 4 : 0;
+ }
++
++void ps3_video_present_size(unsigned *w,unsigned *h){*w=width;*h=height;}
++int ps3_video_stereo_mode(void){return extension_mode;}
+diff --git a/port/ps3/src/ps3_video.h b/port/ps3/src/ps3_video.h
+index e5922d75..4d423ba5 100644
+--- a/port/ps3/src/ps3_video.h
++++ b/port/ps3/src/ps3_video.h
+@@ -34,4 +34,6 @@ unsigned ps3_video_memory_bytes(void);
+ void ps3_display_acquire(void);
+ void ps3_display_release(void);
+ 
++void ps3_video_present_size(unsigned *width, unsigned *height);
++int ps3_video_stereo_mode(void);
+ #endif
+diff --git a/port/ps3/xbox/d3d8_rsx.c b/port/ps3/xbox/d3d8_rsx.c
+index 1df517c2..91f30d36 100644
+--- a/port/ps3/xbox/d3d8_rsx.c
++++ b/port/ps3/xbox/d3d8_rsx.c
+@@ -8,6 +8,7 @@ Resources: d3d8_resources.c. The game's thread records calls; the PPE's other th
+ #include "halo_ui_pointer.h"
+ #include "port_config.h"
+ #include "ps3_gpu.h"
++#include "halo_extensions.h"
+ #include "ps3_spu.h"
+ #include "ps3_system.h"
+ #include "ps3_timers.h"
+@@ -262,7 +263,8 @@ enum
+ 	_record_light_bounds,
+ 	_record_scale,
+ 	/* the Direct3D SPU's only (spu_direct3d.h) */
+-	_record_copy
++	_record_copy,
++	_record_extension_capture
+ };
+ 
+ /* the timer build's records by type (_ps3_timer_record_wrap on) */
+@@ -4773,6 +4775,17 @@ static void record_execute(const struct record *record)
+ 	case _record_draw_stamps:
+ 		draw_stamps_set((int)record->a - 1);
+ 		break;
++	case _record_extension_capture:
++        {
++            struct surface_words words;
++            struct render_target *target;
++            scale_end();
++            surface_words_read(&device.back_buffer, &words);
++            target = render_target_get(&words, FALSE);
++            if (target) halo_gpu_capture_eye((int)record->a, target->offset, target->pitch,
++                (uint32_t)target->width, (uint32_t)target->height);
++        }
++        break;
+ 	case _record_present:
+ 		present_run();
+ 		break;
+@@ -5637,6 +5650,8 @@ static BOOL spu_direct3d_test(void);
+ /* the SPU's set-up from the device's state now; TRUE when it runs and its first chunk reached the RSX */
+ static BOOL spu_direct3d_start(void)
+ {
++	/* Extension capture records are serviced by the PPE until the SPU protocol gains them. */
++	if (halo_ext_stereo_mode()) return FALSE;
+ 	spu_d3d_setup *setup = &spu.setup;
+ 	uint32_t spare_bytes = 0, offset = 0, index;
+ 	void *spare = ps3_gpu_command_spare(&spare_bytes);
+@@ -6275,6 +6290,12 @@ void WINAPI D3DDevice_SetPixelShaderProgram(D3DPIXELSHADERDEF *definition)
+ 	D3D__RenderState[D3DRS_PSINPUTTEXTURE] = definition->PSInputTexture;
+ }
+ 
++void d3d8_extension_capture(int eye)
++{
++    record_begin(_record_extension_capture, 0, (uint32_t)eye, 0);
++    record_commit();
++}
++
+ /* ---------- presentation */
+ 
+ unsigned long platform_d3d_frame_count(void)
+diff --git a/port/ps3/xbox/xinput_ps3.c b/port/ps3/xbox/xinput_ps3.c
+index e196bd67..0704e8aa 100644
+--- a/port/ps3/xbox/xinput_ps3.c
++++ b/port/ps3/xbox/xinput_ps3.c
+@@ -2,6 +2,7 @@
+ disconnects; all pad calls run on the game's thread, which polls once a frame in XGetDeviceChanges. */
+ 
+ #include "ps3_input.h"
++#include "halo_extensions.h"
+ 
+ #include <stdio.h>
+ #include <string.h>
+@@ -217,6 +218,7 @@ BOOL WINAPI XGetDeviceChanges(PXPP_DEVICE_TYPE device_type, PDWORD insertions, P
+ 		DWORD connected = 0, lost;
+ 		int port;
+ 
++		{extern int halo_ps3_map_loading(void);halo_move_set_loading(halo_ps3_map_loading());}
+ 		ps3_input_poll();
+ 		lost = pads_assign();
+ 		motors_update();
+@@ -323,16 +325,12 @@ unsigned long halo_keyboard_actions(short controller_index)
+ 
+ int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
+ {
+-	(void)gamepad_index;
+-	*yaw = 0.0f;
+-	*pitch = 0.0f;
+-	return FALSE;
++	return gamepad_index == 0 ? halo_move_look(yaw, pitch) : 0;
+ }
+ 
+ int halo_linux_mouse_aiming(short gamepad_index)
+ {
+-	(void)gamepad_index;
+-	return FALSE;
++	return gamepad_index == 0 && halo_move_connected();
+ }
+ 
+ /* (no touch screen, no push-to-talk key) */
+diff --git a/source/game/game.c b/source/game/game.c
+index 8589339f..191738ae 100644
+--- a/source/game/game.c
++++ b/source/game/game.c
+@@ -526,6 +526,9 @@ boolean game_is_cooperative(
+ 	return player_spawn_count > 1;
+ }
+ 
++#ifdef HALO_PS3
++static int halo_map_initializing;
++#endif
+ boolean game_load(
+ 	struct game_options *options)
+ {
+@@ -566,6 +569,9 @@ void aiming_frames_forget(void); /* port: source/models/model_animations.c */
+ void game_initialize_for_new_map(
+ 	void)
+ {
++#ifdef HALO_PS3
++	halo_map_initializing = 1;
++#endif
+ 	match_assert(
+ 		"c:\\halo\\SOURCE\\game\\game.c",
+ 		0x1D1,
+@@ -635,6 +641,7 @@ void game_initialize_for_new_map(
+ 	/* port: a campaign map's units', items' and projectiles' textures read before its first frame */
+ 	if (global_scenario_get()->type == _scenario_type_solo)
+ 		predicted_resources_precache_object_textures();
++	halo_map_initializing = 0;
+ #endif
+ 
+ 	return;
+@@ -659,6 +666,15 @@ boolean game_map_loading_in_progress(
+ 	return globals->map_load_in_progress;
+ }
+ 
++#ifdef HALO_PS3
++/* Fixed-width host boundary: input polling must not run GEM jobs during a load. */
++int halo_ps3_map_loading(void)
++{
++	return !game_globals || !game_globals->active ||
++		game_globals->map_load_in_progress || halo_map_initializing;
++}
++#endif
++
+ void game_unload(
+ 	void)
+ {
+diff --git a/source/game/player_control.c b/source/game/player_control.c
+index fe38b02e..6b1effad 100644
+--- a/source/game/player_control.c
++++ b/source/game/player_control.c
+@@ -1357,6 +1357,13 @@ static void get_local_player_input_blob(
+ 								mouse_yaw *= inverse_zoom;
+ 								mouse_pitch *= inverse_zoom;
+ 							}
++#ifdef HALO_PS3
++                            {
++                                extern void halo_move_apply_aim(real *, real *);
++                                halo_move_apply_aim(&mouse_yaw, &mouse_pitch);
++                                {extern real halo_move_take_turn(void);mouse_yaw+=halo_move_take_turn();}
++                            }
++#endif
+ 							input->facing_delta.yaw += mouse_yaw;
+ 							input->facing_delta.pitch += mouse_pitch;
+ 						}
+@@ -1624,6 +1631,12 @@ static void get_local_player_input_blob(
+ 			_unit_control_user_animation2_bit,
+ 			input_key_is_down(_key_2) == TRUE);
+ 
++#ifdef HALO_PS3
++        if (gamepad_index == 0) {
++            extern void halo_move_throttle(real *, real *);
++            halo_move_throttle(&input->throttle.i, &input->throttle.j);
++        }
++#endif
+ 		if (magnitude_squared2d(&input->throttle) > 1.f)
+ 		{
+ 			real scale = 1.f / square_root(magnitude_squared2d(&input->throttle));
+diff --git a/source/interface/hud.c b/source/interface/hud.c
+index ac6d98a6..9e6fbbdb 100644
+--- a/source/interface/hud.c
++++ b/source/interface/hud.c
+@@ -1463,6 +1463,14 @@ static void hud_draw_match_timer(
+ 	return;
+ }
+ 
++
++#ifdef HALO_PS3
++extern volatile long ps3_main_loop_step;
++#define PS3_HUD_TRACE(n) (ps3_main_loop_step=(n))
++#else
++#define PS3_HUD_TRACE(n) ((void)0)
++#endif
++
+ void hud_draw_screen(
+ 	void)
+ {
+@@ -1472,7 +1480,7 @@ void hud_draw_screen(
+ 	uint64_t ps3_span;
+ #endif
+ 
+-	rasterizer_hud_begin();
++	PS3_HUD_TRACE(63400); rasterizer_hud_begin(); PS3_HUD_TRACE(63401);
+ 	if (player_index != NONE)
+ 	{
+ 		struct player_datum *player = player_get(player_index);
+@@ -1505,7 +1513,7 @@ void hud_draw_screen(
+ 		if (!game_time_get_paused() &&
+ 			render.local_player_index == local_player_get_next(NONE))
+ 		{
+-			motion_sensor_tick();
++			PS3_HUD_TRACE(63402); motion_sensor_tick(); PS3_HUD_TRACE(63403);
+ 		}
+ 		PS3_HUD_ADD(_ps3_timer_hud_motion_sensor, ps3_span);
+ 
+@@ -1515,38 +1523,38 @@ void hud_draw_screen(
+ 				perspective != _director_perspective_scripted &&
+ 				player->unit_index != NONE)
+ 			{
+-				hud_render_weapon_interface(player);
++				PS3_HUD_TRACE(63404); hud_render_weapon_interface(player); PS3_HUD_TRACE(63405);
+ 				PS3_HUD_ADD(_ps3_timer_hud_weapon, ps3_span);
+-				hud_show_action_response(player_index);
+-				hud_play_unit_sounds(player, hud_scripted_globals->show_hud);
+-				hud_render_unit_interface(player);
++				PS3_HUD_TRACE(63406); hud_show_action_response(player_index); PS3_HUD_TRACE(63407);
++				PS3_HUD_TRACE(63408); hud_play_unit_sounds(player, hud_scripted_globals->show_hud); PS3_HUD_TRACE(63409);
++				PS3_HUD_TRACE(63410); hud_render_unit_interface(player); PS3_HUD_TRACE(63411);
+ 				PS3_HUD_ADD(_ps3_timer_hud_unit, ps3_span);
+-				hud_render_nav_points(render.local_player_index);
+-				hud_render_damage_indicators(render.local_player_index);
++				PS3_HUD_TRACE(63412); hud_render_nav_points(render.local_player_index); PS3_HUD_TRACE(63413);
++				PS3_HUD_TRACE(63414); hud_render_damage_indicators(render.local_player_index); PS3_HUD_TRACE(63415);
+ 				PS3_HUD_ADD(_ps3_timer_hud_navigation, ps3_span);
+ 			}
+ 			else
+ 			{
+-				hud_show_action_response(player_index);
+-				hud_play_unit_sounds(player, hud_scripted_globals->show_hud);
++				PS3_HUD_TRACE(63406); hud_show_action_response(player_index); PS3_HUD_TRACE(63407);
++				PS3_HUD_TRACE(63408); hud_play_unit_sounds(player, hud_scripted_globals->show_hud); PS3_HUD_TRACE(63409);
+ 			}
+ 		}
+ 		else
+ 		{
+-			hud_play_unit_sounds(player, FALSE);
++			PS3_HUD_TRACE(63416); hud_play_unit_sounds(player, FALSE); PS3_HUD_TRACE(63417);
+ 		}
+ 		PS3_HUD_ADD(_ps3_timer_hud_unit, ps3_span);
+ 
+-		hud_messaging_update(render.local_player_index);
++		PS3_HUD_TRACE(63418); hud_messaging_update(render.local_player_index); PS3_HUD_TRACE(63419);
+ 		PS3_HUD_ADD(_ps3_timer_hud_messages, ps3_span);
+ 		/* port: network games' text chat, the lines this view's player hears */
+-		network_chat_draw(render.local_player_index);
++		PS3_HUD_TRACE(63420); network_chat_draw(render.local_player_index); PS3_HUD_TRACE(63421);
+ 	}
+ 
+-	rasterizer_hud_end();
++	PS3_HUD_TRACE(63422); rasterizer_hud_end(); PS3_HUD_TRACE(63423);
+ 	if (temporary_hud)
+ 	{
+-		temporary_hud_draw();
++		PS3_HUD_TRACE(63424); temporary_hud_draw(); PS3_HUD_TRACE(63425);
+ 	}
+ 
+ 	return;
+diff --git a/source/interface/hud_draw.c b/source/interface/hud_draw.c
+index 0907a6f6..6d7997f1 100644
+--- a/source/interface/hud_draw.c
++++ b/source/interface/hud_draw.c
+@@ -1685,7 +1685,18 @@ static void hud_draw_bitmap_with_meter(
+ 		&point);
+ 	/* port: the crosshairs_draw scope moves only the weapon's reticle */
+ 	if (is_crosshair_bitmap)
+-		passenger_camera_reticle_offset(&point);
++        passenger_camera_reticle_offset(&point);
++#ifdef HALO_PS3
++    if(is_crosshair_bitmap && render.local_player_index==0) {
++        extern void halo_move_reticle_point(short *,short *,real,real);
++        extern volatile long ps3_main_loop_step;
++        ps3_main_loop_step=63500;
++        halo_move_reticle_point(&point.x,&point.y,
++            (real)(render.camera.viewport_bounds.x1-render.camera.viewport_bounds.x0),
++            (real)(render.camera.viewport_bounds.y1-render.camera.viewport_bounds.y0));
++        ps3_main_loop_step=63501;
++    }
++#endif
+ 	hud_calculate_bitmap_bounds(
+ 		bitmap,
+ 		absolute_placement->corner,
+diff --git a/source/interface/interface.c b/source/interface/interface.c
+index 2341f84d..06ef5b05 100644
+--- a/source/interface/interface.c
++++ b/source/interface/interface.c
+@@ -517,6 +517,14 @@ void interface_draw_bitmap_modulated(
+ #define PS3_INTERFACE_ADD(timer, span) ((void)0)
+ #endif
+ 
++
++#ifdef HALO_PS3
++extern volatile long ps3_main_loop_step;
++#define PS3_HUD_TRACE(n) (ps3_main_loop_step=(n))
++#else
++#define PS3_HUD_TRACE(n) ((void)0)
++#endif
++
+ void interface_draw_screen(
+ 	void)
+ {
+@@ -530,6 +538,7 @@ void interface_draw_screen(
+ 		return;
+ 
+ 	PS3_INTERFACE_SPAN(ps3_span);
++	PS3_HUD_TRACE(63301);
+ 	weapon_hud_index = interface_get_weapon_hud_index(&flashlight_power);
+ 	if (weapon_hud_index != NONE)
+ 	{
+@@ -662,22 +671,32 @@ void interface_draw_screen(
+ 				}
+ 			}
+ 
++			PS3_HUD_TRACE(63302);
+ 			rasterizer_screen_effect(&parameters);
++			PS3_HUD_TRACE(63303);
+ 		}
+ 		else
+ 		{
++			PS3_HUD_TRACE(63304);
+ 			rasterizer_screen_effect(NULL);
++			PS3_HUD_TRACE(63305);
+ 		}
+ 	}
+ 	else
+ 	{
+-		rasterizer_screen_effect(NULL);
++		PS3_HUD_TRACE(63304);
++			rasterizer_screen_effect(NULL);
++			PS3_HUD_TRACE(63305);
+ 	}
+ 
+ 	PS3_INTERFACE_ADD(_ps3_timer_hud_screen_effect, ps3_span);
++	PS3_HUD_TRACE(63306);
+ 	hud_draw_screen();
++	PS3_HUD_TRACE(63307);
+ 	PS3_INTERFACE_SPAN(ps3_span);
++	PS3_HUD_TRACE(63308);
+ 	game_engine_post_rasterize();
++	PS3_HUD_TRACE(63309);
+ 	PS3_INTERFACE_ADD(_ps3_timer_hud_game_engine, ps3_span);
+ 
+ 	return;
+diff --git a/source/render/render.c b/source/render/render.c
+index 1b735d08..4cb6044f 100644
+--- a/source/render/render.c
++++ b/source/render/render.c
+@@ -6,6 +6,13 @@ upstream halo-ce-universal copy of source/render/render.c. */
+ #include "cseries.h"
+ #include "cseries/errors.h"
+ #include "render.h"
++#ifdef HALO_PS3
++#include "text/draw_string.h"
++extern int halo_ext_menu(void);
++extern int halo_ext_selected(void);
++extern int halo_ext_rows(void);
++extern void halo_ext_row(int row,char *text,unsigned int size);
++#endif
+ #include "render_cameras_internal.h"
+ #include "render_particles.h"
+ #include "objects.h"
+@@ -57,6 +64,14 @@ enum
+ 	_render_planar_fog_mode_fully_fogged = 2,
+ };
+ 
++#ifdef HALO_PS3
++extern float halo_ext_value(const char *name);
++extern int halo_ext_stereo_mode(void);
++extern void d3d8_extension_capture(int eye);
++extern void halo_ext_draw_menu(void);
++static int extension_eye;
++#endif
++
+ /* ---------- macros */
+ 
+ #define RASTERIZER_TARGET_RENDER_PRIMARY_WIDTH halo_screen_width()
+@@ -176,6 +191,9 @@ static void render_nonplayer_frame(
+ 		break;
+ 	}
+ 
++	#ifdef HALO_PS3
++	halo_ext_draw_menu();
++	#endif
+ 	rasterizer_window_end();
+ 	profile_render_window_end();
+ 
+@@ -219,10 +237,16 @@ void render_frame_pregame(
+ 		}
+ 	}
+ 
++	#ifdef HALO_PS3
++	halo_ext_draw_menu();
++	#endif
+ 	rasterizer_window_end();
+ 	profile_render_window_end();
+ 	rasterizer_windows_end();
+ 	rasterizer_frame_end();
++#ifdef HALO_PS3
++    if (halo_ext_stereo_mode()) {d3d8_extension_capture(0);d3d8_extension_capture(1);}
++#endif
+ 
+ 	return;
+ }
+@@ -344,7 +368,7 @@ static void render_window(
+ 	/* port: display.dynamic_resolution (d3d8_rsx.c): the primary window's 3D view drawn smaller from its clear, then
+ 	scaled up over the screen before the HUD; not in split screen (30 frames a second), its cinematics too */
+ 	ps3_scaled = rasterizer_target == _render_target_primary && main_get_window_count() == 1 &&
+-		local_player_count() <= 1 && d3d8_dynamic_resolution(TRUE);
++		local_player_count() <= 1 && !halo_ext_stereo_mode() && d3d8_dynamic_resolution(TRUE);
+ #endif
+ 	rasterizer_window_begin(&parameters);
+ 	PS3_TIMER_SPLIT(_ps3_timer_window_visibility);
+@@ -565,6 +589,9 @@ static void render_window(
+ 	editor_render();
+ 	rasterizer_debug_draw();
+ 	PS3_WINDOW_STEP(37);
++	#ifdef HALO_PS3
++	if(rasterizer_target==_render_target_primary)halo_ext_draw_menu();
++	#endif
+ 	rasterizer_window_end();
+ 	profile_render_window_end();
+ 	PS3_TIMER_SPLIT(_ps3_timer_window_end);
+@@ -671,6 +698,17 @@ static void render_player_frame(
+ 		}
+ 	}
+ 
++#ifdef HALO_PS3
++    if (extension_eye) {
++        real separation = extension_eye * halo_ext_value("r_stereo_depth") * 0.0325f;
++        real convergence = MAX(0.5f, halo_ext_value("r_stereo_convergence"));
++        real aspect = (real)(camera->viewport_bounds.x1-camera->viewport_bounds.x0) /
++            MAX(1,camera->viewport_bounds.y1-camera->viewport_bounds.y0);
++        real shift = -separation / (convergence * tangent(camera->vertical_field_of_view * 0.5f) * aspect);
++        frustum_bounds.x0 += shift;
++        frustum_bounds.x1 += shift;
++    }
++#endif
+ 	render_camera_build_frustum(camera, &frustum_bounds, &frustum, TRUE);
+ 	render_camera_build_frustum(
+ 		&window->rasterizer_camera,
+@@ -730,7 +768,7 @@ static void render_player_frame(
+ 	return;
+ }
+ 
+-void render_frame(
++static void extension_render_frame(
+ 	struct render_window *windoze,
+ 	short window_count,
+ 	const point2d *screenshot_page_index,
+@@ -803,3 +841,75 @@ void render_frame(
+ }
+ 
+ /* ---------- private code */
++
++/* Public frame entry: both eyes see exactly the same simulation/interpolation time.
++ * Keep stock cameras intact, including multiplayer window rectangles. */
++void render_frame(struct render_window *windows, short count,
++    const point2d *page, const point2d *index, struct bitmap_data *bitmap, real delta)
++{
++#ifdef HALO_PS3
++    int eye, i;
++    struct render_window freeaim_windows[4];
++    if (count>0 && count<=4) {
++        memcpy(freeaim_windows,windows,count*sizeof(windows[0]));
++        windows=freeaim_windows;
++        for(i=0;i<count;i++) if(windows[i].local_player_index==0) {
++            extern void halo_move_camera(float *,float *,float,float);
++            struct render_camera *c[2]={&windows[i].render_camera,&windows[i].rasterizer_camera};
++            int j;
++            for(j=0;j<2;j++) halo_move_camera(&c[j]->forward.i,&c[j]->up.i,c[j]->vertical_field_of_view,
++                (float)(c[j]->viewport_bounds.x1-c[j]->viewport_bounds.x0)/
++                MAX(1,c[j]->viewport_bounds.y1-c[j]->viewport_bounds.y0));
++        }
++    }
++    struct render_window copies[4];
++    if (halo_ext_stereo_mode() && count > 0 && count <= 4 && !index && !bitmap) {
++        for (eye = 0; eye < 2; eye++) {
++            extension_eye = (eye == 0 ? -1 : 1) * (halo_ext_value("r_stereo_swap") ? -1 : 1);
++            memcpy(copies, windows, count * sizeof(copies[0]));
++            for (i = 0; i < count; i++) {
++                struct render_camera *cameras[2] = {&copies[i].render_camera, &copies[i].rasterizer_camera};
++                int c;
++                if (copies[i].local_player_index == NONE) continue;
++                for (c = 0; c < 2; c++) {
++                    real_vector3d right;
++                    real distance = extension_eye * halo_ext_value("r_stereo_depth") * 0.0325f;
++                    cross_product3d(&cameras[c]->forward, &cameras[c]->up, &right);
++                    cameras[c]->position.x += right.i * distance;
++                    cameras[c]->position.y += right.j * distance;
++                    cameras[c]->position.z += right.k * distance;
++                }
++            }
++            extension_render_frame(copies, count, page, index, bitmap, delta);
++            d3d8_extension_capture(eye);
++        }
++        extension_eye = 0;
++        return;
++    }
++#endif
++    extension_render_frame(windows, count, page, index, bitmap, delta);
++}
++
++#ifdef HALO_PS3
++void halo_ext_draw_menu(void)
++{
++    rectangle2d bounds;
++    real_argb_color color = {1.0f, 0.3f, 1.0f, 0.4f};
++    char text[200];
++    int selected, first, row;
++    if (!halo_ext_menu()) return;
++    selected = halo_ext_selected(); first = selected / 10 * 10;
++    draw_string_set_draw_mode(interface_get_tag_index(_interface_font_terminal),NONE,0,0,&color);
++    bounds.x0=35; bounds.x1=620; bounds.y0=20; bounds.y1=60;
++    rasterizer_draw_string(&bounds, NULL, NULL, 0, "STEREO + MOVE | Select+Start / Circle: save & close");
++    for (row=first; row<first+10 && row<halo_ext_rows(); row++) {
++        char value[160]; halo_ext_row(row,value,sizeof(value));
++        snprintf(text,sizeof(text),"%s %s",row==selected?">":"  ",value);
++        bounds.y0=65+(row-first)*30; bounds.y1=bounds.y0+30;
++        rasterizer_draw_string(&bounds,NULL,NULL,0,text);
++    }
++    bounds.y0=390;bounds.y1=440;
++    rasterizer_draw_string(&bounds,NULL,NULL,0,"D-pad: select / adjust. X: run action. Stereo format: restart game.");
++}
++
++#endif
+diff --git a/tools/ps3_extensions_math_test.c b/tools/ps3_extensions_math_test.c
+new file mode 100644
+index 00000000..01db1c38
+--- /dev/null
++++ b/tools/ps3_extensions_math_test.c
+@@ -0,0 +1,60 @@
++#include "extension_compat.h"
++#include "ps3_move_math.h"
++#include "ps3_move_gestures.h"
++#include <assert.h>
++#include <stdlib.h>
++struct ext_clock host;
++static int turning,connected=1,menu;
++float halo_ext_value(const char *name){
++ if(!strcmp(name,"move_freeaim"))return 1;
++ if(!strcmp(name,"move_freeaim_range"))return .7f;
++ if(!strcmp(name,"move_freeaim_turn_gain"))return 5.5f;
++ return 0;
++}
++int halo_move_connected(void){return connected;}
++int halo_ext_menu(void){return menu;}
++int halo_move_turning(void){return turning;}
++extern void halo_move_apply_aim(float *,float *);
++extern void halo_move_camera(float *,float *,float,float);
++extern void halo_move_throttle(float *,float *);
++extern void halo_move_reticle(float *,float *,float,float);
++extern void halo_move_reticle_point(int16_t *,int16_t *,float,float);
++static void near(float a,float b){assert(fabsf(a-b)<.0001f);}
++int main(void){
++ float y,p;
++ assert(!PS3_MoveDelta(0,10000,1,1,1.5,.05,0,0,&y,&p));near(y,0);near(p,0);
++ assert(!PS3_MoveDelta(1,200000,1,1,1.5,.05,0,0,&y,&p));
++ assert(!PS3_MoveDelta(1,10001,NAN,1,1.5,.05,0,0,&y,&p));
++ assert(!PS3_MoveDelta(1,10001,1,1,1.5,.05,0,1,&y,&p));
++ assert(PS3_MoveDelta(1,10001,0,1,1.5,.05,0,0,&y,&p));near(y,.95f*.01f*57.2957795f*1.5f);
++ assert(PS3_MoveDelta(1,10001,.01,.01,1.5,.05,0,0,&y,&p));near(y,0);near(p,0);
++ host.realtime=1;y=.1f;p=.05f;halo_move_apply_aim(&y,&p);near(y,.1);near(p,.05);
++ float forward[3]={cosf(.05f)*cosf(.1f),cosf(.05f)*sinf(.1f),sinf(.05f)};
++ float up[3]={-sinf(.05f)*cosf(.1f),-sinf(.05f)*sinf(.1f),cosf(.05f)};
++ halo_move_camera(forward,up,1.04719755f,1.77777778f);near(forward[0],1);near(forward[1],0);near(forward[2],0);
++ float f=1,s=0;halo_move_throttle(&f,&s);near(f*f+s*s,1);
++ float x=0,z=0;halo_move_reticle(&x,&z,852,480);assert(x<0 && z<0);
++ struct {int16_t before,x,y,after;} point={1234,0,0,2345};
++ halo_move_reticle_point(&point.x,&point.y,852,480);
++ assert(point.before==1234 && point.after==2345);
++ assert(point.x==(int16_t)x && point.y==(int16_t)z);
++ point.x=point.y=-32768;halo_move_reticle_point(&point.x,&point.y,852,480);
++ assert(point.x==-32768 && point.y==-32768);
++ assert(point.before==1234 && point.after==2345);
++
++ turning=1;y=.01f;p=.02f;host.realtime+=.03;halo_move_apply_aim(&y,&p);near(y,.055);near(p,.11);
++ turning=0;y=100;p=100;host.realtime+=.03;halo_move_apply_aim(&y,&p);assert(fabsf(y)<1 && fabsf(p)<1);
++ menu=1;y=0;p=0;halo_move_apply_aim(&y,&p);assert(y<0 && p<0);x=z=0;halo_move_reticle(&x,&z,852,480);near(x,0);near(z,0);
++ /* Parallel eye cameras + asymmetric projection agree at convergence, with no toe-in. */
++ for(int eye=-1;eye<=1;eye+=2){float separation=eye*.0325f*.5f,convergence=10,tangent=1;
++  float shift=-separation/(convergence*tangent),projected=-separation/(convergence*tangent)-shift;near(projected,0);}
++ ps3_gesture_state_t state={0};float acceleration[3]={0,0,1};
++ ps3_gesture_result_t g=PS3_GestureStep(&state,1,acceleration,0,0,0,1,1,1,.5,3,.8);assert(!g.shake && !g.turn);
++ g=PS3_GestureStep(&state,1,acceleration,0,0,0,1,1,1,.5,3,.8);assert(!g.shake && !g.turn);
++ acceleration[0]=NAN;g=PS3_GestureStep(&state,20000,acceleration,0,0,0,1,1,1,.5,3,.8);assert(!g.shake && !g.turn && !state.previous);
++ memset(&state,0,sizeof(state));acceleration[0]=0;int turns=0;
++ for(int i=0;i<24;i++)PS3_GestureStep(&state,1+i*10000,acceleration,0,0,0,1,0,1,.5,3,.8);
++ for(int i=24;i<32;i++){g=PS3_GestureStep(&state,1+i*10000,acceleration,0,4,0,1,0,1,.5,3,.8);if(g.turn){assert(g.locked);turns+=g.turn;}}
++ assert(turns==1);
++ puts("PASS: gyro freshness, deadzone, clutch, freeaim/camera cancellation, reticle direction, movement magnitude, convergence, gesture invalid-data reset");
++}
+diff --git a/tools/ps3_extensions_settings_test.c b/tools/ps3_extensions_settings_test.c
+new file mode 100644
+index 00000000..b418f447
+--- /dev/null
++++ b/tools/ps3_extensions_settings_test.c
+@@ -0,0 +1,25 @@
++#include "extension_compat.h"
++#include "ps3_input.h"
++#include <assert.h>
++#include <stdlib.h>
++static const char *folder;
++const char *ps3_host_data_root(void){return folder;}
++uint64_t ps3_host_microseconds(void){return 1000000;}
++void ps3_host_log(const char *format,...){(void)format;}
++void PS3_MoveCameraInit(void){}
++void halo_move_register_commands(void){}
++void halo_move_calibrate(void){}
++void halo_move_frame(unsigned *buttons){*buttons=0;}
++int halo_move_connected(void){return 0;}
++unsigned halo_move_pad_mask(void){return 0;}
++int main(int argc,char **argv){
++ assert(argc==3);folder=argv[1];halo_ext_init();
++ assert(halo_ext_value("move_enable")==strtof(argv[2],0));
++ int switches=0;char row[256];
++ for(int i=0;i<halo_ext_rows();i++){
++  halo_ext_row(i,row,sizeof(row));
++  if(!strncmp(row,"move_enable:",12))switches++;
++  assert(strncmp(row,"move_enabled:",13));
++ }
++ assert(switches==1);puts("PASS: single Move enable switch and config migration");
++}
+diff --git a/tools/ps3_extensions_settings_test.py b/tools/ps3_extensions_settings_test.py
+new file mode 100644
+index 00000000..b0af27c4
+--- /dev/null
++++ b/tools/ps3_extensions_settings_test.py
+@@ -0,0 +1,20 @@
++"""Compile and exercise the real settings loader with isolated config fixtures."""
++from pathlib import Path
++import subprocess
++import tempfile
++
++root=Path(__file__).resolve().parents[1]
++with tempfile.TemporaryDirectory(prefix='halo-settings-') as temporary:
++    work=Path(temporary)
++    binary=work/'settings-test'
++    subprocess.run(['gcc','-std=c99','-Wall','-Wextra','-fsanitize=address,undefined',
++        '-I'+str(root/'port/ps3/extensions'),'-I'+str(root/'port/ps3/src'),
++        str(root/'tools/ps3_extensions_settings_test.c'),
++        str(root/'port/ps3/extensions/extension_settings.c'),'-lm','-o',str(binary)],check=True)
++    cases=[('',0),('move_enable 1\nmove_enabled 0\n',1),
++           ('move_enabled 0\nmove_enable 1\n',1),('move_enabled 1\n',1),
++           ('move_enable 0\nmove_enabled 1\n',0)]
++    for index,(config,expected) in enumerate(cases):
++        folder=work/str(index);folder.mkdir()
++        (folder/'extensions.cfg').write_text(config)
++        subprocess.run([str(binary),str(folder),str(expected)],check=True)
+diff --git a/tools/ps3_move_loading_test.py b/tools/ps3_move_loading_test.py
+new file mode 100644
+index 00000000..2b3cb786
+--- /dev/null
++++ b/tools/ps3_move_loading_test.py
+@@ -0,0 +1,94 @@
++"""Exercise production Move polling against a fake SDK: no GEM calls while loading."""
++from pathlib import Path
++import re,subprocess,tempfile
++root=Path(__file__).resolve().parents[1]
++sdk=r'''
++#ifndef TEST_GEM_H
++#define TEST_GEM_H
++#include <stdint.h>
++#include <string.h>
++typedef uint64_t sys_ppu_thread_t;
++typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
++typedef struct {char data[128];} Spurs;
++typedef struct {char data[128];} SpursAttribute;
++typedef struct {u32 version,max;Spurs *spurs;u8 spu_priorities[8];} gemAttribute;
++typedef struct {u32 status[4],port[4];} gemInfo;
++typedef struct {u16 buttons,ANA_T;char reserved[20];} test_pad;
++typedef struct {float accelerometer[4],gyro[4],accelerometer_bias[4],gyro_bias[4];test_pad pad;uint64_t time;int counter;} gemInertialState;
++#define MAX_MOVES 4
++#define MOVE_VERSION 2
++#define SYSMODULE_SPURS 1
++#define SYSMODULE_GEM 2
++#define GEM_INERTIAL_LATEST 0
++#define GEM_INERTIAL_PREVIOUS 1
++extern int sdk_calls,last_rumble,spurs_ppu_priority;
++static inline int sysThreadGetId(sys_ppu_thread_t *t){*t=1;return 0;}
++static inline int sysThreadGetPriority(sys_ppu_thread_t t,int *p){(void)t;*p=1001;return 0;}
++static inline int gemTrackHues(u32 *h,void *p){(void)h;(void)p;sdk_calls++;return 0;}
++static inline int gemGetRGB(int n,float *r,float *g,float *b){(void)n;sdk_calls++;*r=*g=*b=1;return 0;}
++static inline int gemForceRGB(int n,float r,float g,float b){(void)n;(void)r;(void)g;(void)b;sdk_calls++;return 0;}
++static inline int gemGetTrackerHue(int n,u32 *h){(void)n;sdk_calls++;*h=240;return 0;}
++static inline int gemGetAllTrackableHues(u8 *h){sdk_calls++;memset(h,1,360);return 0;}
++static inline int gemSetRumble(int n,unsigned value){(void)n;sdk_calls++;last_rumble=(int)value;return 0;}
++static inline int gemEnd(void){sdk_calls++;return 0;}
++static inline int spursFinalize(Spurs *p){(void)p;sdk_calls++;return 0;}
++static inline int sysModuleUnload(int n){(void)n;sdk_calls++;return 0;}
++static inline int sysModuleLoad(int n){(void)n;sdk_calls++;return 0;}
++static inline int spursAttributeInitialize(SpursAttribute *p,int a,int b,int c,int d){(void)p;(void)a;(void)b;(void)d;spurs_ppu_priority=c;sdk_calls++;return 0;}
++static inline int spursInitializeWithAttribute(Spurs *p,SpursAttribute *a){(void)p;(void)a;sdk_calls++;return 0;}
++static inline int gemInit(gemAttribute *p){(void)p;sdk_calls++;return 0;}
++static inline int gemReset(int n){(void)n;sdk_calls++;return 0;}
++static inline int gemGetInfo(gemInfo *p){sdk_calls++;memset(p,0,sizeof(*p));p->status[0]=1;p->port[0]=1;return 0;}
++static inline int gemGetInertialState(int n,int mode,uint64_t time,gemInertialState *p){
++ (void)n;(void)time;sdk_calls++;if(mode==GEM_INERTIAL_PREVIOUS)return 1;
++ static int packet;memset(p,0,sizeof(*p));p->counter=++packet;p->time=packet*10000;p->accelerometer[2]=1;return 0;
++}
++#endif
++'''
++harness=r'''
++#include "extension_compat.h"
++#include "test_gem.h"
++#include <assert.h>
++#include <stdarg.h>
++int sdk_calls,last_rumble,spurs_ppu_priority;
++struct ext_clock host;
++static char status[160];
++float Cvar_VariableValue(const char *n){return !strcmp(n,"move_enable")?1:0;}
++void Cvar_FullSet(const char *n,const char *v,int flags){(void)flags;if(!strcmp(n,"move_status"))snprintf(status,sizeof(status),"%s",v);}
++uint64_t ps3_host_microseconds(void){return (uint64_t)(host.realtime*1000000);}
++void ps3_host_log(const char *s,...){(void)s;}
++void Cmd_AddCommand(const char *n,void (*f)(void),const char *d){(void)n;(void)f;(void)d;}
++const char *va(const char *s,...){static char b[256];va_list a;va_start(a,s);vsnprintf(b,sizeof(b),s,a);va_end(a);return b;}
++int halo_ext_menu(void){return 0;}
++int halo_move_has_aim_offset(void){return 0;}
++void PS3_MoveCameraReset(void){}
++void PS3_MoveCameraColorChanged(void){}
++void PS3_MoveCameraShutdown(void){sdk_calls++;}
++int PS3_MoveCameraCalibrating(void){return 0;}
++void PS3_MoveCameraPumpInertial(void){sdk_calls++;}
++int PS3_MoveCameraFrame(int n,int cursor,int blocked,float *y,float *p){(void)n;(void)cursor;(void)blocked;(void)y;(void)p;sdk_calls++;return 0;}
++extern void halo_move_rumble(int);
++int main(void){
++ unsigned buttons;float yaw,pitch;host.realtime=1;
++ halo_move_set_loading(1);halo_move_frame(&buttons);halo_move_rumble(80);
++ assert(sdk_calls==0);assert(strstr(status,"loading"));assert(!halo_move_connected());
++ halo_move_set_loading(0);halo_move_frame(&buttons);assert(halo_move_connected());assert(last_rumble==80);assert(spurs_ppu_priority==1001);
++ unsigned mask=halo_move_pad_mask();assert(mask==1);halo_move_look(&yaw,&pitch);
++ int before=sdk_calls;
++ halo_move_set_loading(1);halo_move_frame(&buttons);halo_move_rumble(120);halo_move_frame(&buttons);
++ assert(sdk_calls==before);assert(halo_move_connected());assert(halo_move_pad_mask()==mask);
++ halo_move_set_loading(0);host.realtime+=1;halo_move_frame(&buttons);
++ assert(sdk_calls>before);assert(last_rumble==120);halo_move_look(&yaw,&pitch);assert(yaw==0 && pitch==0);
++ puts("PASS: no SDK calls during loading; controller preserved; deferred rumble and fresh-history resume");
++}
++'''
++with tempfile.TemporaryDirectory(prefix='halo-move-loading-') as temporary:
++    work=Path(temporary)
++    production=(root/'port/ps3/extensions/extension_move.c').read_text()
++    production=re.sub(r'#include <(?:io/move|spurs/spurs|sys/spu|sys/thread|sysmodule/sysmodule)\.h>','',production)
++    (work/'move.c').write_text('#include "test_gem.h"\n'+production)
++    (work/'test_gem.h').write_text(sdk);(work/'test.c').write_text(harness)
++    binary=work/'test'
++    subprocess.run(['gcc','-std=c99','-Wall','-Wextra','-fsanitize=address,undefined','-I'+str(work),
++        '-I'+str(root/'port/ps3/extensions'),'-I'+str(root/'port/ps3/src'),str(work/'move.c'),str(work/'test.c'),'-lm','-o',str(binary)],check=True)
++    subprocess.run([str(binary)],check=True)

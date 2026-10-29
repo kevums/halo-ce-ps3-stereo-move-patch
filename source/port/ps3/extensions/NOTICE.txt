@@ -1,0 +1,6 @@
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+New Halo integration files follow the Halo PS3 repository's root LICENSE.
+The NSPS3-derived camera, gyro and gesture files retain their original authorship
+and applicable upstream terms. See README.md and extension-manifest.json for exact
+file provenance. The user's NSPS3 working tree is reference material, unchanged.

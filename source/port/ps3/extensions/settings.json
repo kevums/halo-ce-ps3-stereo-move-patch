@@ -1,0 +1,192 @@
+[
+  {
+    "name": "move_enable",
+    "default": "0",
+    "description": "enable PS Move wand input (restart required)"
+  },
+  {
+    "name": "move_blue_orb",
+    "default": "0",
+    "description": "Blue orb while Move is in use; uses a trackable blue hue with PS Eye"
+  },
+  {
+    "name": "move_sensitivity",
+    "default": "1.5",
+    "description": "view degrees per degree of Move rotation"
+  },
+  {
+    "name": "move_freeaim_turn_button",
+    "default": "0",
+    "description": "independent aim turn button: 0 mapped clutch, 1 T, 2 X, 3 Square, 4 Circle, 5 Triangle, 6 Start, 7 Select, 8 Move"
+  },
+  {
+    "name": "move_freeaim_invert",
+    "default": "1",
+    "description": "independent aim: release to turn, hold to lock camera and aim reticle"
+  },
+  {
+    "name": "move_freeaim_turn_gain",
+    "default": "5.5",
+    "description": "independent camera turn multiplier, 0.5 to 12; fine aim is unchanged"
+  },
+  {
+    "name": "move_deadzone",
+    "default": "0.0500000007",
+    "description": "Move gyro drift deadzone in radians/sec"
+  },
+  {
+    "name": "move_invert_y",
+    "default": "0",
+    "description": "invert Move pitch"
+  },
+  {
+    "name": "move_nav",
+    "default": "1",
+    "description": "use Navigation button layout with a connected Move"
+  },
+  {
+    "name": "move_nav_port",
+    "default": "0",
+    "description": "Navigation pad port, 0 automatic or 1-7"
+  },
+  {
+    "name": "move_gestures",
+    "default": "1",
+    "description": "enable optional Move gestures in gameplay"
+  },
+  {
+    "name": "move_gesture_shake",
+    "default": "1",
+    "description": "shake action: 0 off, 1 reload, 2 next weapon, 3 use, 4 jump"
+  },
+  {
+    "name": "move_gesture_flick",
+    "default": "0",
+    "description": "enable left/right flick turns"
+  },
+  {
+    "name": "move_gesture_angle",
+    "default": "90",
+    "description": "flick turn degrees"
+  },
+  {
+    "name": "move_gesture_shake_limit",
+    "default": "0.500000",
+    "description": "shake acceleration threshold in G"
+  },
+  {
+    "name": "move_gesture_flick_limit",
+    "default": "3",
+    "description": "flick yaw threshold in radians per second"
+  },
+  {
+    "name": "move_gesture_cooldown",
+    "default": "0.8",
+    "description": "seconds between gestures"
+  },
+  {
+    "name": "move_camera",
+    "default": "0",
+    "description": "use PS Eye light-ball tracking"
+  },
+  {
+    "name": "move_camera_sensitivity",
+    "default": "3.250000",
+    "description": "light-ball cursor and look sensitivity"
+  },
+  {
+    "name": "move_camera_mirror",
+    "default": "0",
+    "description": "mirror camera X for natural screen pointing"
+  },
+  {
+    "name": "move_camera_fallback",
+    "default": "1",
+    "description": "use gyro if the light ball is not tracked"
+  },
+  {
+    "name": "move_camera_edge_turn",
+    "default": "0",
+    "description": "continuous horizontal turning near optical aim edges"
+  },
+  {
+    "name": "move_camera_edge_zone",
+    "default": "0.65",
+    "description": "central optical aim region, fraction of half-width"
+  },
+  {
+    "name": "move_camera_turn_speed",
+    "default": "300",
+    "description": "maximum optical edge turn speed in degrees/sec"
+  },
+  {
+    "name": "move_camera_steadiness",
+    "default": "1",
+    "description": "optical jitter filtering strength, 0 to 3"
+  },
+  {
+    "name": "move_freeaim",
+    "default": "1",
+    "description": "independent Move reticle with configurable camera hold behavior"
+  },
+  {
+    "name": "move_freeaim_range",
+    "default": "0.699999988",
+    "description": "maximum reticle distance from center, fraction of half-screen"
+  },
+  {
+    "name": "r_stereo",
+    "default": "0",
+    "description": "Enable stereoscopic rendering (restart required)"
+  },
+  {
+    "name": "r_stereo_mode",
+    "default": "1",
+    "description": "1 side-by-side, 2 over/under, 3 HDMI frame-packed, 4 frame-sequential (restart required)"
+  },
+  {
+    "name": "r_stereo_depth",
+    "default": "0.5",
+    "description": "Eye separation multiplier, 0 to 3"
+  },
+  {
+    "name": "r_stereo_convergence",
+    "default": "10",
+    "description": "Zero parallax distance in world units"
+  },
+  {
+    "name": "r_stereo_swap",
+    "default": "0",
+    "description": "Swap left and right eyes"
+  },
+  {
+    "name": "move_bind_t",
+    "default": "512",
+    "description": "Move T: PS3 button mask (R2 fire)"
+  },
+  {
+    "name": "move_bind_move",
+    "default": "1024",
+    "description": "Move button: L1 grenade switch"
+  },
+  {
+    "name": "move_bind_square",
+    "default": "32768",
+    "description": "Square: reload/use"
+  },
+  {
+    "name": "move_bind_cross",
+    "default": "16384",
+    "description": "Cross: jump"
+  },
+  {
+    "name": "move_bind_circle",
+    "default": "8192",
+    "description": "Circle: melee"
+  },
+  {
+    "name": "move_bind_triangle",
+    "default": "4096",
+    "description": "Triangle: change weapon"
+  }
+]
