@@ -37,5 +37,6 @@
     "tools/ps3_extensions_settings_test.py": "e72602c0e79aae3be452955b1f24da7206db5d9d656b81e119bbdea47e98edc6",
     "tools/ps3_move_loading_test.py": "385012b8bfb4836fec58c4ede9d1f57e9bb31e81b66e85f50415aef49cf4cecc"
   },
-  "nsps3_reference_commit": "09af768d29da1de50958d5ae4b2ebf6abbde6775"
+  "nsps3_reference_commit": "09af768d29da1de50958d5ae4b2ebf6abbde6775",
+  "source_hash_line_endings": "LF normalized"
 }
