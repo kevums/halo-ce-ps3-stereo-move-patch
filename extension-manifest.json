@@ -1,12 +1,12 @@
 {
   "name": "Halo CE experimental PS Move and stereo patch",
-  "status": "Move-enabled campaign freeze unresolved; development source",
+  "status": "Latest Fix 7 build confirmed working by the user on PS3; broader hardware/mode validation remains incomplete",
   "upstream_commit": "f105a8e5a328cbe5e0768d6e73601ddaf0442c31",
-  "patch_sha256": "756a535e10b481d4be039fe5ce0001b22918f1f665c051b0cf262f813a0f2c22",
+  "patch_sha256": "c786088d5c298b168e07afe1dec039e4dcd7a17793d4378a094009f9710d080b",
   "source_files": {
     "Makefile": "8bbb51df993a5a0a3d9a794eaae2ab58d2fce1e38c1baf19ac9daf47d82e1d55",
     "port/ps3/extensions/NOTICE.txt": "441e15b97c9f901d48a55c16b1f26c3770217e85be1d822bcaf3ed82cb224e5f",
-    "port/ps3/extensions/README.md": "152d0f2d149ba408d094df49bc4ae7cb6be18de5c35969b2fc270580850681a4",
+    "port/ps3/extensions/README.md": "769493785029cf14cc5d54121cf6896e0d68e674f1b13a28f7347d946a095dd9",
     "port/ps3/extensions/extension_compat.h": "eb928f42dcb4c70c8b80caad1da5479abdcd0df506f7f7af7604040ef261af6a",
     "port/ps3/extensions/extension_freeaim.c": "68cad7df9f9fa9028db705c255fb55f59009444eb169064b06b976bdac76ca91",
     "port/ps3/extensions/extension_move.c": "c17d27b640483351b0d2026dabcfec759abd9873bf91e82c3a6df3b64dd79414",

@@ -3,12 +3,9 @@
 Work in progress based on Mayo1970/halo-ce-ps3 commit
 e76d50c304c425a912c49a973cfd908d9ecbab85.
 
-**Known blocker: campaign loading with Move enabled freezes on the test PS3.**
-The latest hardware capture stops at HUD marker63500 around the Move reticle
-call. A signed16-bit HUD coordinate / float-pointer mismatch has been repaired,
-but that build has not resolved the reported freeze. The installed executable's
-identity still needs verification. Do not treat the mock tests as hardware proof.
-Stereo enabled with Move disabled was reported to load the same campaign.
+**Latest Fix 7 build: confirmed working by the user on PS3.** Earlier Move-enabled
+campaign freezes are no longer reported for this build. Broader hardware and
+mode validation remains incomplete.
 Full NSPS3 feature parity is incomplete.
 
 ## Settings

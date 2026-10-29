@@ -1,8 +1,7 @@
 diff --git a/Makefile b/Makefile
-index d46a565c..e900027c 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -8,11 +8,11 @@ PSL1GHT ?= $(PS3DEV)
+@@ -8,11 +8,11 @@
  .DEFAULT_GOAL := all
  
  TARGET     := halo_ps3
@@ -16,7 +15,7 @@ index d46a565c..e900027c 100644
  DEBUG      ?= 1
  # XMB icon, 320x176 PNG
  ICON0      ?= ICON/ICON0.PNG
-@@ -38,7 +38,7 @@ MBEDTLS_FLAGS := -I$(MBEDTLS_DIR)/include -DMBEDTLS_USER_CONFIG_FILE='"ps3_mbedt
+@@ -38,7 +38,7 @@
  
  # ---------- the host layer (port/ps3/src): lv2 and newlib with their own 64-bit long
  
@@ -25,7 +24,7 @@ index d46a565c..e900027c 100644
  HOST_ASMS := $(wildcard $(PS3_DIR)/src/*.S)
  HOST_OBJS := $(patsubst %,$(BUILD)/obj/%.o,$(basename $(HOST_SRCS) $(HOST_ASMS)))
  # internet play's DTLS with browsers (posix.h), with the host's long as on the other native builds
-@@ -48,7 +48,7 @@ HOST_OBJS += $(BUILD)/obj/port/linux/src/posix_dtls.o
+@@ -48,7 +48,7 @@
  # goes first so that its setjmp.h shadows newlib's.
  CFLAGS := -std=gnu99 -O2 -Wall -mcpu=cell -mhard-float -mno-altivec -fno-strict-aliasing \
            -D__PS3__ -DPS3_LOG_IP=\"$(LOG_IP)\" \
@@ -34,7 +33,7 @@ index d46a565c..e900027c 100644
  ifeq ($(DEBUG),1)
  CFLAGS += -DPS3_LOG
  endif
-@@ -60,7 +60,7 @@ LDFLAGS := -Wl,--no-multi-toc -L$(PSL1GHT)/ppu/lib -L$(PS3DEV)/portlibs/ppu/lib
+@@ -60,7 +60,7 @@
             -Wl,--wrap,printf -Wl,--wrap,vprintf -Wl,--wrap,puts -Wl,--wrap,putchar \
             -Wl,--wrap,malloc -Wl,--wrap,calloc -Wl,--wrap,realloc -Wl,--wrap,memalign -Wl,--wrap,_sbrk_r
  
@@ -43,7 +42,7 @@ index d46a565c..e900027c 100644
  
  # ---------- the game's units
  
-@@ -327,7 +327,8 @@ self: $(BUILD)/$(TARGET).elf
+@@ -327,7 +327,8 @@
  
  pkg: $(BUILD)/$(TARGET).elf
  	$(SPRXLINK) $<
@@ -53,7 +52,7 @@ index d46a565c..e900027c 100644
  	$(MAKE_SELF_NPDRM) $< $(BUILD)/pkg/USRDIR/EBOOT.BIN $(CONTENT_ID)
  	$(SFO) --title "$(TITLE)" --appid "$(TITLE_ID)" -f $(PS3DEV)/bin/sfo.xml $(BUILD)/pkg/PARAM.SFO
  	@cp $(ICON0) $(BUILD)/pkg/ICON0.PNG
-@@ -352,3 +353,7 @@ clean:
+@@ -352,3 +353,7 @@
  
  -include $(HOST_OBJS:.o=.d) $(XBOX_OBJS:.o=.d) $(TOML_OBJS:.o=.d) $(MUSL_OBJS:.o=.d) $(ZLIB_OBJS:.o=.d) $(THIRD_PARTY_OBJS:.o=.d) $(MBEDTLS_OBJS:.o=.d) $(GAME_OBJS:.o=.d) \
  	$(BRINGUP_OBJS:.o=.d)
@@ -63,7 +62,6 @@ index d46a565c..e900027c 100644
 +XBOX_CFLAGS += -I$(PS3_DIR)/extensions
 diff --git a/port/ps3/extensions/NOTICE.txt b/port/ps3/extensions/NOTICE.txt
 new file mode 100644
-index 00000000..47fcd665
 --- /dev/null
 +++ b/port/ps3/extensions/NOTICE.txt
 @@ -0,0 +1,6 @@
@@ -75,21 +73,17 @@ index 00000000..47fcd665
 +file provenance. The user's NSPS3 working tree is reference material, unchanged.
 diff --git a/port/ps3/extensions/README.md b/port/ps3/extensions/README.md
 new file mode 100644
-index 00000000..c3aceee2
 --- /dev/null
 +++ b/port/ps3/extensions/README.md
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,64 @@
 +# Experimental stereo and PS Move extension
 +
 +Work in progress based on Mayo1970/halo-ce-ps3 commit
 +e76d50c304c425a912c49a973cfd908d9ecbab85.
 +
-+**Known blocker: campaign loading with Move enabled freezes on the test PS3.**
-+The latest hardware capture stops at HUD marker63500 around the Move reticle
-+call. A signed16-bit HUD coordinate / float-pointer mismatch has been repaired,
-+but that build has not resolved the reported freeze. The installed executable's
-+identity still needs verification. Do not treat the mock tests as hardware proof.
-+Stereo enabled with Move disabled was reported to load the same campaign.
++**Latest Fix 7 build: confirmed working by the user on PS3.** Earlier Move-enabled
++campaign freezes are no longer reported for this build. Broader hardware and
++mode validation remains incomplete.
 +Full NSPS3 feature parity is incomplete.
 +
 +## Settings
@@ -148,7 +142,6 @@ index 00000000..c3aceee2
 +root LICENSE. No claim of upstream endorsement or complete compatibility.
 diff --git a/port/ps3/extensions/extension_compat.h b/port/ps3/extensions/extension_compat.h
 new file mode 100644
-index 00000000..7f20e503
 --- /dev/null
 +++ b/port/ps3/extensions/extension_compat.h
 @@ -0,0 +1,29 @@
@@ -183,7 +176,6 @@ index 00000000..7f20e503
 +#endif
 diff --git a/port/ps3/extensions/extension_freeaim.c b/port/ps3/extensions/extension_freeaim.c
 new file mode 100644
-index 00000000..707faf66
 --- /dev/null
 +++ b/port/ps3/extensions/extension_freeaim.c
 @@ -0,0 +1,57 @@
@@ -246,7 +238,6 @@ index 00000000..707faf66
 +}
 diff --git a/port/ps3/extensions/extension_move.c b/port/ps3/extensions/extension_move.c
 new file mode 100644
-index 00000000..972d04a7
 --- /dev/null
 +++ b/port/ps3/extensions/extension_move.c
 @@ -0,0 +1,313 @@
@@ -565,7 +556,6 @@ index 00000000..972d04a7
 +float halo_move_take_turn(void){float turn=pending_turn;pending_turn=0;return turn;}
 diff --git a/port/ps3/extensions/extension_settings.c b/port/ps3/extensions/extension_settings.c
 new file mode 100644
-index 00000000..0a76a3d6
 --- /dev/null
 +++ b/port/ps3/extensions/extension_settings.c
 @@ -0,0 +1,164 @@
@@ -735,7 +725,6 @@ index 00000000..0a76a3d6
 +}
 diff --git a/port/ps3/extensions/halo_extensions.h b/port/ps3/extensions/halo_extensions.h
 new file mode 100644
-index 00000000..65dd03fe
 --- /dev/null
 +++ b/port/ps3/extensions/halo_extensions.h
 @@ -0,0 +1,26 @@
@@ -767,7 +756,6 @@ index 00000000..65dd03fe
 +#endif
 diff --git a/port/ps3/extensions/ps3_move_camera.c b/port/ps3/extensions/ps3_move_camera.c
 new file mode 100644
-index 00000000..331da893
 --- /dev/null
 +++ b/port/ps3/extensions/ps3_move_camera.c
 @@ -0,0 +1,299 @@
@@ -1072,7 +1060,6 @@ index 00000000..331da893
 +}
 diff --git a/port/ps3/extensions/ps3_move_camera.h b/port/ps3/extensions/ps3_move_camera.h
 new file mode 100644
-index 00000000..9898e5eb
 --- /dev/null
 +++ b/port/ps3/extensions/ps3_move_camera.h
 @@ -0,0 +1,13 @@
@@ -1091,7 +1078,6 @@ index 00000000..9898e5eb
 +#endif
 diff --git a/port/ps3/extensions/ps3_move_gestures.h b/port/ps3/extensions/ps3_move_gestures.h
 new file mode 100644
-index 00000000..2172e4b0
 --- /dev/null
 +++ b/port/ps3/extensions/ps3_move_gestures.h
 @@ -0,0 +1,77 @@
@@ -1174,7 +1160,6 @@ index 00000000..2172e4b0
 +#endif
 diff --git a/port/ps3/extensions/ps3_move_math.h b/port/ps3/extensions/ps3_move_math.h
 new file mode 100644
-index 00000000..a35b52e3
 --- /dev/null
 +++ b/port/ps3/extensions/ps3_move_math.h
 @@ -0,0 +1,26 @@
@@ -1206,7 +1191,6 @@ index 00000000..a35b52e3
 +#endif
 diff --git a/port/ps3/extensions/settings.inc b/port/ps3/extensions/settings.inc
 new file mode 100644
-index 00000000..d61ed131
 --- /dev/null
 +++ b/port/ps3/extensions/settings.inc
 @@ -0,0 +1,30 @@
@@ -1242,7 +1226,6 @@ index 00000000..d61ed131
 +EXT_SETTING("move_bind_triangle", "4096", "Triangle: change weapon")
 diff --git a/port/ps3/extensions/settings.json b/port/ps3/extensions/settings.json
 new file mode 100644
-index 00000000..2f904b63
 --- /dev/null
 +++ b/port/ps3/extensions/settings.json
 @@ -0,0 +1,192 @@
@@ -1439,7 +1422,6 @@ index 00000000..2f904b63
 +  }
 +]
 diff --git a/port/ps3/src/ps3_gpu.c b/port/ps3/src/ps3_gpu.c
-index 9908dc97..56730c91 100644
 --- a/port/ps3/src/ps3_gpu.c
 +++ b/port/ps3/src/ps3_gpu.c
 @@ -2,6 +2,7 @@
@@ -1450,7 +1432,7 @@ index 9908dc97..56730c91 100644
  #include "ps3_spu.h"
  #include "ps3_system.h"
  #include "ps3_timers.h"
-@@ -1303,6 +1304,8 @@ static void blit_quad(unsigned display_width, unsigned display_height, float lef
+@@ -1303,6 +1304,8 @@
  	ps3_gpu_draw(GCM_TYPE_QUADS, 0, 4);
  }
  
@@ -1459,7 +1441,7 @@ index 9908dc97..56730c91 100644
  static void blit_draw(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t height)
  {
  	unsigned display_width, display_height, picture_width, picture_height;
-@@ -1310,7 +1313,7 @@ static void blit_draw(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t
+@@ -1310,7 +1313,7 @@
  	struct ps3_gpu_texture texture;
  	uint32_t unit;
  
@@ -1468,7 +1450,7 @@ index 9908dc97..56730c91 100644
  	/* the back buffer is drawn at the display's lines (d3d8_rsx.c's screen scale): pixel for pixel in the middle,
  	else scaled to fit */
  	picture_width = width;
-@@ -1344,8 +1347,12 @@ static void blit_draw(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t
+@@ -1344,8 +1347,12 @@
  	viewport_offset[3] = 0.0f;
  	rsxSetViewport(context, 0, 0, (u16)display_width, (u16)display_height, 0.0f, 1.0f, scale, viewport_offset);
  	rsxSetViewportClip(context, 0, (u16)display_width, (u16)display_height);
@@ -1482,7 +1464,7 @@ index 9908dc97..56730c91 100644
  	{
  		rsxSetClearColor(context, 0xff000000u);
  		rsxClearSurface(context, GCM_CLEAR_R | GCM_CLEAR_G | GCM_CLEAR_B | GCM_CLEAR_A);
-@@ -1728,6 +1735,54 @@ static void draw_stamps_read(void)
+@@ -1728,6 +1735,54 @@
  	draw_stamps.count = 0;
  }
  
@@ -1537,7 +1519,7 @@ index 9908dc97..56730c91 100644
  void ps3_gpu_present(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t height)
  {
  	uint64_t span;
-@@ -1737,8 +1792,7 @@ void ps3_gpu_present(uint32_t offset, uint32_t pitch, uint32_t width, uint32_t h
+@@ -1737,8 +1792,7 @@
  	span = ps3_timer_now();
  	ps3_video_begin_frame();
  	ps3_timer_add(_ps3_timer_flip_wait, span);
@@ -1548,7 +1530,6 @@ index 9908dc97..56730c91 100644
  	/* the frame's last timestamp (_ps3_timer_present: the time after the render's) */
  	ps3_gpu_timestamp(_ps3_timer_present);
 diff --git a/port/ps3/src/ps3_input.c b/port/ps3/src/ps3_input.c
-index ac1cd1ff..711cad8b 100644
 --- a/port/ps3/src/ps3_input.c
 +++ b/port/ps3/src/ps3_input.c
 @@ -1,6 +1,7 @@
@@ -1559,7 +1540,7 @@ index ac1cd1ff..711cad8b 100644
  #include "ps3_system.h"
  
  #include <string.h>
-@@ -72,10 +73,12 @@ void ps3_input_init(void)
+@@ -72,10 +73,12 @@
  	memset(pads, 0, sizeof(pads));
  	memset(pad_data, 0, sizeof(pad_data));
  	initialized = 1;
@@ -1572,7 +1553,7 @@ index ac1cd1ff..711cad8b 100644
  	if (initialized)
  		ioPadEnd();
  	initialized = 0;
-@@ -110,11 +113,12 @@ void ps3_input_poll(void)
+@@ -110,11 +113,12 @@
  			continue;
  		decode(pad, &pad_data[port]);
  	}
@@ -1586,7 +1567,7 @@ index ac1cd1ff..711cad8b 100644
  }
  
  /* the motors run until the next call (ioQuake3-PS3 PS3_SetRumble) */
-@@ -124,6 +128,7 @@ void ps3_input_rumble(int port, int large, int small)
+@@ -124,6 +128,7 @@
  
  	if (!initialized || port < 0 || port >= PS3_PAD_PORTS)
  		return;
@@ -1595,10 +1576,9 @@ index ac1cd1ff..711cad8b 100644
  	act.small_motor = small ? 1 : 0;
  	act.large_motor = (u8)(large < 0 ? 0 : large > 255 ? 255 : large);
 diff --git a/port/ps3/src/ps3_main.c b/port/ps3/src/ps3_main.c
-index 3f28321c..8d07f253 100644
 --- a/port/ps3/src/ps3_main.c
 +++ b/port/ps3/src/ps3_main.c
-@@ -20,7 +20,7 @@ SYS_PROCESS_PARAM(1001, 0x100000);
+@@ -20,7 +20,7 @@
  
  /* above the game's threads (1001): it sleeps in its vsync waits */
  #define DISPLAY_PRIORITY 1000
@@ -1607,7 +1587,7 @@ index 3f28321c..8d07f253 100644
  
  int halo_xbox_main(void);
  void platform_kernel_initialize(void);
-@@ -28,6 +28,7 @@ int platform_memory_initialize(void);
+@@ -28,6 +28,7 @@
  void platform_memory_usage(uint32_t *mapped_mb, uint32_t *peak_mb);
  int platform_heartbeat(void);
  void ps3_host_report_blocked(void);
@@ -1615,7 +1595,7 @@ index 3f28321c..8d07f253 100644
  
  static volatile int game_status = _ps3_host_status_running;
  /* main()'s frame and the game thread's stack, logged at the start */
-@@ -148,6 +149,7 @@ static void display_main(void *argument)
+@@ -148,6 +149,7 @@
  		if (ps3_time_seconds() >= next_heartbeat)
  		{
  			ps3_log_printf("[hb] t=%.0fs display frames %u\n", ps3_time_seconds(), frame);
@@ -1624,7 +1604,6 @@ index 3f28321c..8d07f253 100644
  			if (platform_heartbeat())
  				main_thread_report();
 diff --git a/port/ps3/src/ps3_system.c b/port/ps3/src/ps3_system.c
-index 514e8d9d..01b88f05 100644
 --- a/port/ps3/src/ps3_system.c
 +++ b/port/ps3/src/ps3_system.c
 @@ -27,7 +27,7 @@
@@ -1645,7 +1624,7 @@ index 514e8d9d..01b88f05 100644
  static sys_mutex_t log_mutex;
  static int log_mutex_ready;
  
-@@ -137,11 +139,20 @@ static void log_init(void)
+@@ -137,11 +139,20 @@
  	if (log_socket < 0)
  		return;
  	memset(&log_address, 0, sizeof(log_address));
@@ -1667,7 +1646,7 @@ index 514e8d9d..01b88f05 100644
  }
  
  /* ---------- XMB exit */
-@@ -350,7 +361,7 @@ void ps3_system_init(void)
+@@ -350,7 +361,7 @@
  	sysModuleLoad(SYSMODULE_NET);
  	net_result = netInitialize();
  	log_init();
@@ -1677,7 +1656,6 @@ index 514e8d9d..01b88f05 100644
  	/* priority 1000: above the game threads (1001), which can keep both PPE threads busy; lower
  	numbers run first, and it sleeps 100 ms per pass */
 diff --git a/port/ps3/src/ps3_video.c b/port/ps3/src/ps3_video.c
-index 157b78a4..0112d022 100644
 --- a/port/ps3/src/ps3_video.c
 +++ b/port/ps3/src/ps3_video.c
 @@ -2,6 +2,7 @@
@@ -1688,7 +1666,7 @@ index 157b78a4..0112d022 100644
  #include "ps3_system.h"
  
  #include <malloc.h>
-@@ -24,6 +25,7 @@ static gcmContextData *context;
+@@ -24,6 +25,7 @@
  static void *host_buffer;
  static u32 width = 1280, height = 720, pitch;
  static int widescreen = 1;
@@ -1696,7 +1674,7 @@ index 157b78a4..0112d022 100644
  /* the display buffers in tiled regions 0 to 2 (rsxtest_tile's), which the RSX writes faster */
  #define TILED_DISPLAY_BUFFERS 1
  static void *color_buffer[BUFFER_COUNT];
-@@ -129,8 +131,19 @@ int ps3_video_init(void)
+@@ -129,8 +131,19 @@
  		ps3_log_printf("[vid] videoGetResolution(%d) failed\n", (int)resolution_id);
  		return 0;
  	}
@@ -1717,7 +1695,7 @@ index 157b78a4..0112d022 100644
  	widescreen = aspect != VIDEO_ASPECT_4_3;
  #if TILED_DISPLAY_BUFFERS
  	pitch = gcmGetTiledPitchSize(width * 4);
-@@ -233,7 +246,7 @@ gcmContextData *ps3_video_context(void)
+@@ -233,7 +246,7 @@
  void ps3_video_size(unsigned *out_width, unsigned *out_height)
  {
  	*out_width = width;
@@ -1726,7 +1704,7 @@ index 157b78a4..0112d022 100644
  }
  
  int ps3_video_widescreen(void)
-@@ -333,3 +346,6 @@ unsigned ps3_video_memory_bytes(void)
+@@ -333,3 +346,6 @@
  {
  	return ready ? BUFFER_COUNT * pitch * height + width * height * 4 : 0;
  }
@@ -1734,10 +1712,9 @@ index 157b78a4..0112d022 100644
 +void ps3_video_present_size(unsigned *w,unsigned *h){*w=width;*h=height;}
 +int ps3_video_stereo_mode(void){return extension_mode;}
 diff --git a/port/ps3/src/ps3_video.h b/port/ps3/src/ps3_video.h
-index e5922d75..4d423ba5 100644
 --- a/port/ps3/src/ps3_video.h
 +++ b/port/ps3/src/ps3_video.h
-@@ -34,4 +34,6 @@ unsigned ps3_video_memory_bytes(void);
+@@ -34,4 +34,6 @@
  void ps3_display_acquire(void);
  void ps3_display_release(void);
  
@@ -1745,10 +1722,9 @@ index e5922d75..4d423ba5 100644
 +int ps3_video_stereo_mode(void);
  #endif
 diff --git a/port/ps3/xbox/d3d8_rsx.c b/port/ps3/xbox/d3d8_rsx.c
-index 1df517c2..91f30d36 100644
 --- a/port/ps3/xbox/d3d8_rsx.c
 +++ b/port/ps3/xbox/d3d8_rsx.c
-@@ -8,6 +8,7 @@ Resources: d3d8_resources.c. The game's thread records calls; the PPE's other th
+@@ -8,6 +8,7 @@
  #include "halo_ui_pointer.h"
  #include "port_config.h"
  #include "ps3_gpu.h"
@@ -1756,7 +1732,7 @@ index 1df517c2..91f30d36 100644
  #include "ps3_spu.h"
  #include "ps3_system.h"
  #include "ps3_timers.h"
-@@ -262,7 +263,8 @@ enum
+@@ -262,7 +263,8 @@
  	_record_light_bounds,
  	_record_scale,
  	/* the Direct3D SPU's only (spu_direct3d.h) */
@@ -1766,7 +1742,7 @@ index 1df517c2..91f30d36 100644
  };
  
  /* the timer build's records by type (_ps3_timer_record_wrap on) */
-@@ -4773,6 +4775,17 @@ static void record_execute(const struct record *record)
+@@ -4773,6 +4775,17 @@
  	case _record_draw_stamps:
  		draw_stamps_set((int)record->a - 1);
  		break;
@@ -1784,7 +1760,7 @@ index 1df517c2..91f30d36 100644
  	case _record_present:
  		present_run();
  		break;
-@@ -5637,6 +5650,8 @@ static BOOL spu_direct3d_test(void);
+@@ -5637,6 +5650,8 @@
  /* the SPU's set-up from the device's state now; TRUE when it runs and its first chunk reached the RSX */
  static BOOL spu_direct3d_start(void)
  {
@@ -1793,7 +1769,7 @@ index 1df517c2..91f30d36 100644
  	spu_d3d_setup *setup = &spu.setup;
  	uint32_t spare_bytes = 0, offset = 0, index;
  	void *spare = ps3_gpu_command_spare(&spare_bytes);
-@@ -6275,6 +6290,12 @@ void WINAPI D3DDevice_SetPixelShaderProgram(D3DPIXELSHADERDEF *definition)
+@@ -6275,6 +6290,12 @@
  	D3D__RenderState[D3DRS_PSINPUTTEXTURE] = definition->PSInputTexture;
  }
  
@@ -1807,7 +1783,6 @@ index 1df517c2..91f30d36 100644
  
  unsigned long platform_d3d_frame_count(void)
 diff --git a/port/ps3/xbox/xinput_ps3.c b/port/ps3/xbox/xinput_ps3.c
-index e196bd67..0704e8aa 100644
 --- a/port/ps3/xbox/xinput_ps3.c
 +++ b/port/ps3/xbox/xinput_ps3.c
 @@ -2,6 +2,7 @@
@@ -1818,7 +1793,7 @@ index e196bd67..0704e8aa 100644
  
  #include <stdio.h>
  #include <string.h>
-@@ -217,6 +218,7 @@ BOOL WINAPI XGetDeviceChanges(PXPP_DEVICE_TYPE device_type, PDWORD insertions, P
+@@ -217,6 +218,7 @@
  		DWORD connected = 0, lost;
  		int port;
  
@@ -1826,7 +1801,7 @@ index e196bd67..0704e8aa 100644
  		ps3_input_poll();
  		lost = pads_assign();
  		motors_update();
-@@ -323,16 +325,12 @@ unsigned long halo_keyboard_actions(short controller_index)
+@@ -323,16 +325,12 @@
  
  int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
  {
@@ -1846,10 +1821,9 @@ index e196bd67..0704e8aa 100644
  
  /* (no touch screen, no push-to-talk key) */
 diff --git a/source/game/game.c b/source/game/game.c
-index 8589339f..191738ae 100644
 --- a/source/game/game.c
 +++ b/source/game/game.c
-@@ -526,6 +526,9 @@ boolean game_is_cooperative(
+@@ -526,6 +526,9 @@
  	return player_spawn_count > 1;
  }
  
@@ -1859,7 +1833,7 @@ index 8589339f..191738ae 100644
  boolean game_load(
  	struct game_options *options)
  {
-@@ -566,6 +569,9 @@ void aiming_frames_forget(void); /* port: source/models/model_animations.c */
+@@ -566,6 +569,9 @@
  void game_initialize_for_new_map(
  	void)
  {
@@ -1869,7 +1843,7 @@ index 8589339f..191738ae 100644
  	match_assert(
  		"c:\\halo\\SOURCE\\game\\game.c",
  		0x1D1,
-@@ -635,6 +641,7 @@ void game_initialize_for_new_map(
+@@ -635,6 +641,7 @@
  	/* port: a campaign map's units', items' and projectiles' textures read before its first frame */
  	if (global_scenario_get()->type == _scenario_type_solo)
  		predicted_resources_precache_object_textures();
@@ -1877,10 +1851,11 @@ index 8589339f..191738ae 100644
  #endif
  
  	return;
-@@ -659,6 +666,15 @@ boolean game_map_loading_in_progress(
+@@ -658,6 +665,15 @@
+ 
  	return globals->map_load_in_progress;
  }
- 
++
 +#ifdef HALO_PS3
 +/* Fixed-width host boundary: input polling must not run GEM jobs during a load. */
 +int halo_ps3_map_loading(void)
@@ -1889,15 +1864,13 @@ index 8589339f..191738ae 100644
 +		game_globals->map_load_in_progress || halo_map_initializing;
 +}
 +#endif
-+
+ 
  void game_unload(
  	void)
- {
 diff --git a/source/game/player_control.c b/source/game/player_control.c
-index fe38b02e..6b1effad 100644
 --- a/source/game/player_control.c
 +++ b/source/game/player_control.c
-@@ -1357,6 +1357,13 @@ static void get_local_player_input_blob(
+@@ -1357,6 +1357,13 @@
  								mouse_yaw *= inverse_zoom;
  								mouse_pitch *= inverse_zoom;
  							}
@@ -1911,7 +1884,7 @@ index fe38b02e..6b1effad 100644
  							input->facing_delta.yaw += mouse_yaw;
  							input->facing_delta.pitch += mouse_pitch;
  						}
-@@ -1624,6 +1631,12 @@ static void get_local_player_input_blob(
+@@ -1624,6 +1631,12 @@
  			_unit_control_user_animation2_bit,
  			input_key_is_down(_key_2) == TRUE);
  
@@ -1925,10 +1898,9 @@ index fe38b02e..6b1effad 100644
  		{
  			real scale = 1.f / square_root(magnitude_squared2d(&input->throttle));
 diff --git a/source/interface/hud.c b/source/interface/hud.c
-index ac6d98a6..9e6fbbdb 100644
 --- a/source/interface/hud.c
 +++ b/source/interface/hud.c
-@@ -1463,6 +1463,14 @@ static void hud_draw_match_timer(
+@@ -1463,6 +1463,14 @@
  	return;
  }
  
@@ -1943,7 +1915,7 @@ index ac6d98a6..9e6fbbdb 100644
  void hud_draw_screen(
  	void)
  {
-@@ -1472,7 +1480,7 @@ void hud_draw_screen(
+@@ -1472,7 +1480,7 @@
  	uint64_t ps3_span;
  #endif
  
@@ -1952,7 +1924,7 @@ index ac6d98a6..9e6fbbdb 100644
  	if (player_index != NONE)
  	{
  		struct player_datum *player = player_get(player_index);
-@@ -1505,7 +1513,7 @@ void hud_draw_screen(
+@@ -1505,7 +1513,7 @@
  		if (!game_time_get_paused() &&
  			render.local_player_index == local_player_get_next(NONE))
  		{
@@ -1961,7 +1933,7 @@ index ac6d98a6..9e6fbbdb 100644
  		}
  		PS3_HUD_ADD(_ps3_timer_hud_motion_sensor, ps3_span);
  
-@@ -1515,38 +1523,38 @@ void hud_draw_screen(
+@@ -1515,38 +1523,38 @@
  				perspective != _director_perspective_scripted &&
  				player->unit_index != NONE)
  			{
@@ -2001,10 +1973,12 @@ index ac6d98a6..9e6fbbdb 100644
  		PS3_HUD_ADD(_ps3_timer_hud_messages, ps3_span);
  		/* port: network games' text chat, the lines this view's player hears */
 -		network_chat_draw(render.local_player_index);
-+		PS3_HUD_TRACE(63420); network_chat_draw(render.local_player_index); PS3_HUD_TRACE(63421);
- 	}
- 
+-	}
+-
 -	rasterizer_hud_end();
++		PS3_HUD_TRACE(63420); network_chat_draw(render.local_player_index); PS3_HUD_TRACE(63421);
++	}
++
 +	PS3_HUD_TRACE(63422); rasterizer_hud_end(); PS3_HUD_TRACE(63423);
  	if (temporary_hud)
  	{
@@ -2014,10 +1988,9 @@ index ac6d98a6..9e6fbbdb 100644
  
  	return;
 diff --git a/source/interface/hud_draw.c b/source/interface/hud_draw.c
-index 0907a6f6..6d7997f1 100644
 --- a/source/interface/hud_draw.c
 +++ b/source/interface/hud_draw.c
-@@ -1685,7 +1685,18 @@ static void hud_draw_bitmap_with_meter(
+@@ -1685,7 +1685,18 @@
  		&point);
  	/* port: the crosshairs_draw scope moves only the weapon's reticle */
  	if (is_crosshair_bitmap)
@@ -2038,10 +2011,9 @@ index 0907a6f6..6d7997f1 100644
  		bitmap,
  		absolute_placement->corner,
 diff --git a/source/interface/interface.c b/source/interface/interface.c
-index 2341f84d..06ef5b05 100644
 --- a/source/interface/interface.c
 +++ b/source/interface/interface.c
-@@ -517,6 +517,14 @@ void interface_draw_bitmap_modulated(
+@@ -517,6 +517,14 @@
  #define PS3_INTERFACE_ADD(timer, span) ((void)0)
  #endif
  
@@ -2056,7 +2028,7 @@ index 2341f84d..06ef5b05 100644
  void interface_draw_screen(
  	void)
  {
-@@ -530,6 +538,7 @@ void interface_draw_screen(
+@@ -530,6 +538,7 @@
  		return;
  
  	PS3_INTERFACE_SPAN(ps3_span);
@@ -2064,7 +2036,7 @@ index 2341f84d..06ef5b05 100644
  	weapon_hud_index = interface_get_weapon_hud_index(&flashlight_power);
  	if (weapon_hud_index != NONE)
  	{
-@@ -662,22 +671,32 @@ void interface_draw_screen(
+@@ -662,22 +671,32 @@
  				}
  			}
  
@@ -2099,10 +2071,9 @@ index 2341f84d..06ef5b05 100644
  
  	return;
 diff --git a/source/render/render.c b/source/render/render.c
-index 1b735d08..4cb6044f 100644
 --- a/source/render/render.c
 +++ b/source/render/render.c
-@@ -6,6 +6,13 @@ upstream halo-ce-universal copy of source/render/render.c. */
+@@ -6,6 +6,13 @@
  #include "cseries.h"
  #include "cseries/errors.h"
  #include "render.h"
@@ -2116,7 +2087,7 @@ index 1b735d08..4cb6044f 100644
  #include "render_cameras_internal.h"
  #include "render_particles.h"
  #include "objects.h"
-@@ -57,6 +64,14 @@ enum
+@@ -57,6 +64,14 @@
  	_render_planar_fog_mode_fully_fogged = 2,
  };
  
@@ -2131,7 +2102,7 @@ index 1b735d08..4cb6044f 100644
  /* ---------- macros */
  
  #define RASTERIZER_TARGET_RENDER_PRIMARY_WIDTH halo_screen_width()
-@@ -176,6 +191,9 @@ static void render_nonplayer_frame(
+@@ -176,6 +191,9 @@
  		break;
  	}
  
@@ -2141,7 +2112,7 @@ index 1b735d08..4cb6044f 100644
  	rasterizer_window_end();
  	profile_render_window_end();
  
-@@ -219,10 +237,16 @@ void render_frame_pregame(
+@@ -219,10 +237,16 @@
  		}
  	}
  
@@ -2158,7 +2129,7 @@ index 1b735d08..4cb6044f 100644
  
  	return;
  }
-@@ -344,7 +368,7 @@ static void render_window(
+@@ -344,7 +368,7 @@
  	/* port: display.dynamic_resolution (d3d8_rsx.c): the primary window's 3D view drawn smaller from its clear, then
  	scaled up over the screen before the HUD; not in split screen (30 frames a second), its cinematics too */
  	ps3_scaled = rasterizer_target == _render_target_primary && main_get_window_count() == 1 &&
@@ -2167,7 +2138,7 @@ index 1b735d08..4cb6044f 100644
  #endif
  	rasterizer_window_begin(&parameters);
  	PS3_TIMER_SPLIT(_ps3_timer_window_visibility);
-@@ -565,6 +589,9 @@ static void render_window(
+@@ -565,6 +589,9 @@
  	editor_render();
  	rasterizer_debug_draw();
  	PS3_WINDOW_STEP(37);
@@ -2177,7 +2148,7 @@ index 1b735d08..4cb6044f 100644
  	rasterizer_window_end();
  	profile_render_window_end();
  	PS3_TIMER_SPLIT(_ps3_timer_window_end);
-@@ -671,6 +698,17 @@ static void render_player_frame(
+@@ -671,6 +698,17 @@
  		}
  	}
  
@@ -2195,7 +2166,7 @@ index 1b735d08..4cb6044f 100644
  	render_camera_build_frustum(camera, &frustum_bounds, &frustum, TRUE);
  	render_camera_build_frustum(
  		&window->rasterizer_camera,
-@@ -730,7 +768,7 @@ static void render_player_frame(
+@@ -730,7 +768,7 @@
  	return;
  }
  
@@ -2204,7 +2175,7 @@ index 1b735d08..4cb6044f 100644
  	struct render_window *windoze,
  	short window_count,
  	const point2d *screenshot_page_index,
-@@ -803,3 +841,75 @@ void render_frame(
+@@ -803,3 +841,75 @@
  }
  
  /* ---------- private code */
@@ -2282,7 +2253,6 @@ index 1b735d08..4cb6044f 100644
 +#endif
 diff --git a/tools/ps3_extensions_math_test.c b/tools/ps3_extensions_math_test.c
 new file mode 100644
-index 00000000..01db1c38
 --- /dev/null
 +++ b/tools/ps3_extensions_math_test.c
 @@ -0,0 +1,60 @@
@@ -2348,7 +2318,6 @@ index 00000000..01db1c38
 +}
 diff --git a/tools/ps3_extensions_settings_test.c b/tools/ps3_extensions_settings_test.c
 new file mode 100644
-index 00000000..b418f447
 --- /dev/null
 +++ b/tools/ps3_extensions_settings_test.c
 @@ -0,0 +1,25 @@
@@ -2379,7 +2348,6 @@ index 00000000..b418f447
 +}
 diff --git a/tools/ps3_extensions_settings_test.py b/tools/ps3_extensions_settings_test.py
 new file mode 100644
-index 00000000..b0af27c4
 --- /dev/null
 +++ b/tools/ps3_extensions_settings_test.py
 @@ -0,0 +1,20 @@
@@ -2405,7 +2373,6 @@ index 00000000..b0af27c4
 +        subprocess.run([str(binary),str(folder),str(expected)],check=True)
 diff --git a/tools/ps3_move_loading_test.py b/tools/ps3_move_loading_test.py
 new file mode 100644
-index 00000000..2b3cb786
 --- /dev/null
 +++ b/tools/ps3_move_loading_test.py
 @@ -0,0 +1,94 @@
